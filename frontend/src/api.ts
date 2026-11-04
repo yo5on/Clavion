@@ -188,7 +188,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).` : `Request failed (${r.status}).`
     try {
       const body = await r.json()
-      msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+      // Server messages are lowercase fragments; the UI shows them as sentences.
+      msg = typeof body.detail === 'string' ? body.detail.charAt(0).toUpperCase() + body.detail.slice(1) : JSON.stringify(body.detail)
     } catch {
       /* non-JSON error body */
     }

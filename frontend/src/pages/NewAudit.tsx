@@ -1,14 +1,14 @@
-import { CheckCircle2, Download, FileText, FileUp, FlaskConical, Loader2, X } from 'lucide-react'
+import { Check, FileText, Loader2, X } from 'lucide-react'
 import { useState, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, DOC_LABELS, type DocType, type Provider } from '../api'
 import { useProviders } from '../components/ProviderStatus'
-import { Card, DemoTag, ErrorNote, Field, PROVIDER_STATE, PageHeader, btn, input } from '../components/ui'
+import { Chevron, DemoTag, ErrorNote, Field, PROVIDER_STATE, PageHeader, Section, btn, input } from '../components/ui'
 
 const DOCS: [DocType, string][] = [
-  ['bill', 'Final itemised in-patient bill'],
-  ['policy', 'Policy wording or schedule with room-rent, sub-limit and non-payable clauses'],
-  ['settlement', 'Insurer’s claim settlement letter listing the deductions'],
+  ['bill', 'The final itemised in-patient bill.'],
+  ['policy', 'Policy wording or schedule, with room-rent, sub-limit and non-payable clauses.'],
+  ['settlement', 'The insurer’s settlement letter listing each deduction.'],
 ]
 const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.txt'
 
@@ -48,7 +48,7 @@ export function FileDrop({ onFile, disabled, className = '', children }: {
   }
   return (
     <div
-      className={`${className} transition-colors ${dragging ? 'bg-violet-50/60 outline-2 -outline-offset-2 outline-dashed outline-violet-400' : ''}`}
+      className={`${className} transition-[background-color,box-shadow] duration-200 ${dragging ? 'bg-paper! ring-2 ring-accent-fill ring-inset' : ''}`}
       onDragOver={(e) => over(e, true)}
       onDragLeave={(e) => over(e, false)}
       onDrop={(e) => {
@@ -69,7 +69,7 @@ export function FilePick({ label, onFile, disabled, className = btn.secondary }:
   className?: string
 }) {
   return (
-    <label className={`${className} cursor-pointer has-[:disabled]:pointer-events-none has-[:disabled]:opacity-45 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-violet-600`}>
+    <label className={`${className} cursor-pointer has-[:disabled]:pointer-events-none has-[:disabled]:opacity-36 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-3 has-[:focus-visible]:outline-accent-fill`}>
       {label}
       <input type="file" accept={ACCEPT} className="sr-only" disabled={disabled}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
@@ -123,107 +123,113 @@ export default function NewAudit() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-16 sm:space-y-20">
       <PageHeader
-        kicker="New case"
-        title="New audit"
-        description="Files are read in memory on this server and discarded; only the extracted text and fields are saved. You will review every extracted field before the audit runs."
+        title="Start a new audit"
+        description="Add the three claim documents. You will review every field Clavion reads from them before the audit runs."
       />
 
-      <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-3">
-        <Card title="Claim documents" className="lg:col-span-2" flush>
-          <div className="border-b border-line p-5">
-            <Field label="Case title">
-              <input className={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Appendectomy, Oct 2026" />
+      <form onSubmit={submit} className="space-y-10">
+        <div className="max-w-md">
+          <Field label="Case title">
+            <input className={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Appendectomy, Oct 2026" />
+          </Field>
+        </div>
+
+        <ul className="grid gap-4 md:grid-cols-3">
+          {DOCS.map(([docType, hint]) => {
+            const f = files[docType]
+            const state = progress[docType]
+            const pick = (file: File) => setFiles((fs) => ({ ...fs, [docType]: file }))
+            return (
+              <li key={docType}>
+                <FileDrop onFile={pick} disabled={busy}
+                  className={`flex h-full min-h-60 flex-col rounded-[28px] p-6 sm:p-7 ${f ? 'bg-paper ring-1 ring-hairline-strong' : 'bg-tile'}`}>
+                  {(dragging) => (
+                    <>
+                      <span aria-hidden className={`flex size-10 items-center justify-center rounded-full transition-colors duration-300 ${f ? 'bg-ink text-white' : 'bg-paper text-mute'}`}>
+                        {state === 'working' ? <Loader2 className="size-[18px] animate-spin" /> : f ? <Check className="size-[18px]" strokeWidth={2.25} /> : <FileText className="size-[18px]" strokeWidth={1.75} />}
+                      </span>
+                      <p className="type-heading mt-6">{DOC_LABELS[docType]}</p>
+                      <p className="mt-1.5 text-[15px] leading-relaxed text-mute">
+                        {dragging ? 'Drop to attach.' : hint}
+                        {docType === 'settlement' && !dragging && <span className="block text-ink-2">Required for the audit.</span>}
+                      </p>
+                      <div className="mt-auto pt-6">
+                        {f ? (
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium text-ink">{f.name}</span>
+                              <span className="tabular-nums text-mute">
+                                {(f.size / 1024).toFixed(0)} KB
+                                {state === 'working' && ' · Reading…'}
+                                {state === 'done' && ' · Read'}
+                              </span>
+                            </span>
+                            {!busy && (
+                              <button type="button" className={`${btn.icon} -mr-2 shrink-0`} aria-label={`Remove ${DOC_LABELS[docType]}`}
+                                onClick={() => setFiles((fs) => ({ ...fs, [docType]: undefined }))}>
+                                <X className="size-4" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <FilePick disabled={busy} onFile={pick} className={btn.link}
+                            label={<>Choose a file <Chevron /></>} />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </FileDrop>
+              </li>
+            )
+          })}
+        </ul>
+
+        <ErrorNote error={error} />
+
+        <div className="flex flex-col gap-6 border-t border-hairline pt-8 sm:flex-row sm:items-end sm:justify-between">
+          <div className="sm:w-80">
+            <Field label="Read documents with">
+              <ProviderSelect value={provider} onChange={setProvider} />
             </Field>
           </div>
-          <ul className="divide-y divide-line">
-            {DOCS.map(([docType, hint]) => {
-              const f = files[docType]
-              const state = progress[docType]
-              return (
-                <li key={docType}>
-                  <FileDrop onFile={(file) => setFiles((fs) => ({ ...fs, [docType]: file }))} disabled={busy} className="px-5 py-4">
-                    {(dragging) => (
-                      <div className="flex gap-4">
-                        <span className={`flex size-9 shrink-0 items-center justify-center rounded-md ${f ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                          <FileText className="size-4" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="flex items-center gap-2 text-sm font-medium text-navy-900">
-                                {DOC_LABELS[docType]}
-                                {docType === 'settlement' && <span className="text-xs font-normal text-slate-500">· needed for the audit</span>}
-                              </p>
-                              <p className="mt-0.5 text-xs text-slate-500">{dragging ? 'Drop to attach' : hint}</p>
-                            </div>
-                            <FilePick disabled={busy} onFile={(file) => setFiles((fs) => ({ ...fs, [docType]: file }))}
-                              label={<><FileUp className="size-4" /> {f ? 'Change' : 'Choose file'}</>} />
-                          </div>
-                          {f && (
-                            <p className="mt-2.5 flex items-center gap-2 text-xs text-slate-600">
-                              {state === 'working' && <Loader2 className="size-3.5 animate-spin text-violet-600" />}
-                              {state === 'done' && <CheckCircle2 className="size-3.5 text-emerald-600" />}
-                              <span className="truncate font-medium text-slate-700">{f.name}</span>
-                              <span className="shrink-0 tabular-nums text-slate-400">{(f.size / 1024).toFixed(0)} KB</span>
-                              {state === 'working' && <span className="text-violet-700">Extracting…</span>}
-                              {!busy && (
-                                <button type="button" className="ml-auto rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={`Remove ${DOC_LABELS[docType]}`}
-                                  onClick={() => setFiles((fs) => ({ ...fs, [docType]: undefined }))}>
-                                  <X className="size-3.5" />
-                                </button>
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </FileDrop>
-                </li>
-              )
-            })}
-          </ul>
-          <div className="space-y-4 border-t border-line bg-slate-50/60 p-5">
-            <ErrorNote error={error} />
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="sm:w-72">
-                <Field label="Extraction provider">
-                  <ProviderSelect value={provider} onChange={setProvider} />
-                </Field>
-              </div>
-              <button type="submit" className={btn.primary} disabled={busy || count === 0}>
-                {busy && <Loader2 className="size-4 animate-spin" />}
-                {busy ? 'Extracting…' : count ? `Extract ${count} document${count > 1 ? 's' : ''}` : 'Extract and review'}
-              </button>
-            </div>
-            <p className="text-xs leading-relaxed text-slate-500">
-              PDF text layers are read directly; images and scanned pages go through local OCR. Accepts PDF, PNG, JPG, WEBP and TXT.
-            </p>
-          </div>
-        </Card>
-
-        <Card title={<span className="flex items-center gap-2">Demo claim <DemoTag /></span>}>
-          <p className="text-sm leading-relaxed text-slate-600">
-            Run the full workflow on Clavion’s synthetic claim. Its documents are invented and labelled as demo throughout.
-          </p>
-          <button type="button" className={`${btn.secondary} mt-4 w-full`} onClick={demo} disabled={busy}>
-            <FlaskConical className="size-4" /> Open demo claim
+          <button type="submit" className={`${btn.primary} self-start sm:self-auto`} disabled={busy || count === 0}>
+            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy ? 'Reading documents…' : count ? `Read ${count} document${count > 1 ? 's' : ''}` : 'Read and review'}
           </button>
-          <p className="mt-6 text-xs font-medium text-slate-600">Or download the synthetic files to try uploading:</p>
-          <ul className="mt-2 divide-y divide-line border-y border-line">
-            {DOCS.map(([docType]) => (
-              <li key={docType} className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-700">{DOC_LABELS[docType]}</span>
-                <span className="flex gap-1">
-                  <a className={btn.ghost} href={api.demoDocumentUrl(docType, 'pdf')}><Download className="size-3.5" /> PDF</a>
-                  <a className={btn.ghost} href={api.demoDocumentUrl(docType, 'png')}><Download className="size-3.5" /> PNG</a>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        </div>
+        <p className="max-w-3xl text-sm leading-relaxed text-mute">
+          Files are read in memory on this server and discarded; only the extracted text and fields are saved. PDF text
+          layers are read directly; images and scanned pages go through local OCR. Accepts PDF, PNG, JPG, WEBP and TXT.
+        </p>
       </form>
+
+      <Section>
+        <div className="grid gap-10 md:grid-cols-2 md:gap-16">
+          <div>
+            <h2 className="type-title flex items-center gap-3">Try the demo claim <DemoTag /></h2>
+            <p className="mt-3 text-[17px] leading-relaxed text-mute">
+              Run the full workflow on Clavion’s synthetic claim. Its documents are invented and labelled as demo throughout.
+            </p>
+            <button type="button" className={`${btn.secondary} mt-6`} onClick={demo} disabled={busy}>Open the demo claim</button>
+          </div>
+          <div>
+            <p className="text-[15px] font-medium text-ink">Or download the synthetic files to try uploading</p>
+            <ul className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {DOCS.map(([docType]) => (
+                <li key={docType} className="flex items-center justify-between gap-4 py-3 text-[15px]">
+                  <span className="text-ink-2">{DOC_LABELS[docType]}</span>
+                  <span className="flex gap-5">
+                    <a className={btn.linkSm} href={api.demoDocumentUrl(docType, 'pdf')} aria-label={`Download demo ${DOC_LABELS[docType]} as PDF`}>PDF</a>
+                    <a className={btn.linkSm} href={api.demoDocumentUrl(docType, 'png')} aria-label={`Download demo ${DOC_LABELS[docType]} as PNG`}>PNG</a>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Section>
     </div>
   )
 }

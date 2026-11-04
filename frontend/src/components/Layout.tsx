@@ -1,16 +1,18 @@
-import { FilePlus2, FolderClock, LayoutDashboard, Menu, X } from 'lucide-react'
+import { Menu, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import Logo from './Logo'
+import { btn } from './ui'
 
 const nav = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/audit/new', label: 'New audit', icon: FilePlus2 },
-  { to: '/cases', label: 'Case history', icon: FolderClock },
+  { to: '/', label: 'Overview', end: true },
+  { to: '/audit/new', label: 'New audit' },
+  { to: '/cases', label: 'Case history' },
 ]
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
+  const { pathname } = useLocation()
 
   useEffect(() => {
     if (!open) return
@@ -20,56 +22,55 @@ export default function Layout() {
   }, [open])
 
   return (
-    <div className="min-h-screen lg:flex">
-      <aside
-        aria-label="Main navigation"
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-navy-900 text-slate-400 transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex h-16 items-center justify-between border-b border-white/5 px-5">
-          <Logo />
-          <button className="text-slate-400 hover:text-white lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">
-            <X className="size-5" />
+    <div className="flex min-h-screen flex-col">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:text-white">
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-40 border-b border-hairline bg-canvas">
+        <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-5 sm:px-8">
+          <Link to="/" aria-label="Clavion overview" className="-m-1 rounded-md p-1" onClick={() => setOpen(false)}>
+            <Logo />
+          </Link>
+          <nav aria-label="Main" className="hidden items-center gap-8 md:flex">
+            {nav.filter((n) => n.to !== '/audit/new').map(({ to, label, end }) => (
+              <NavLink key={to} to={to} end={end}
+                className={({ isActive }) => `rounded-sm text-sm transition-colors duration-200 ${isActive ? 'text-ink' : 'text-mute hover:text-ink'}`}>
+                {label}
+              </NavLink>
+            ))}
+            <Link to="/audit/new" className={`${btn.primarySm} h-8 px-3.5 text-[13px]`}>
+              <Plus className="size-3.5" strokeWidth={2.25} /> New audit
+            </Link>
+          </nav>
+          <button className={`${btn.icon} -mr-2 md:hidden`} onClick={() => setOpen((o) => !o)} aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="mobile-nav">
+            {open ? <X className="size-5" strokeWidth={1.75} /> : <Menu className="size-5" strokeWidth={1.75} />}
           </button>
         </div>
-        <nav className="mt-5 space-y-0.5 px-3">
-          {nav.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-white/[0.06] text-white before:absolute before:inset-y-1.5 before:-left-3 before:w-0.5 before:rounded-r before:bg-violet-500'
-                    : 'hover:bg-white/[0.04] hover:text-slate-100'
-                }`
-              }
-            >
-              <Icon className="size-4" strokeWidth={1.75} />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <p className="mt-auto border-t border-white/5 px-5 py-4 text-xs leading-relaxed text-slate-500">
+        {open && (
+          <nav id="mobile-nav" aria-label="Main" className="absolute inset-x-0 top-full h-[calc(100dvh-3.5rem)] animate-fade-in bg-canvas px-5 pt-6 sm:px-8 md:hidden">
+            <ul className="space-y-1">
+              {nav.map(({ to, label, end }) => (
+                <li key={to}>
+                  <NavLink to={to} end={end} onClick={() => setOpen(false)}
+                    className={({ isActive }) => `block py-2 text-[28px] font-semibold tracking-[-0.02em] transition-colors ${isActive ? 'text-ink' : 'text-mute hover:text-ink'}`}>
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+      </header>
+
+      <main id="main" key={pathname} className="mx-auto w-full max-w-[1120px] flex-1 animate-page-in px-5 pb-24 sm:px-8">
+        <Outlet />
+      </main>
+
+      <footer className="border-t border-hairline">
+        <p className="mx-auto max-w-[1120px] px-5 py-6 text-xs leading-relaxed text-mute sm:px-8">
           Clavion explains settlements. It does not give legal advice or guarantee recovery.
         </p>
-      </aside>
-      {open && <div className="fixed inset-0 z-30 bg-navy-950/50 lg:hidden" onClick={() => setOpen(false)} aria-hidden />}
-
-      <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/5 bg-navy-900 px-4 lg:hidden">
-          <Logo />
-          <button className="rounded-md p-1.5 text-slate-300 hover:bg-white/5" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}>
-            <Menu className="size-5" />
-          </button>
-        </header>
-        <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10">
-          <Outlet />
-        </main>
-      </div>
+      </footer>
     </div>
   )
 }
