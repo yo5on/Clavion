@@ -1,48 +1,74 @@
 CLAVION — BharatCode API integration
 ====================================
-Last verified: 2026-11-04. Status flags below say what was tested live vs. read from docs.
+Last verified: 2026-11-04. Every status below says what was tested live and what was only read from docs.
 
 SOURCES
 - Official API page: https://bharatcode.ai/build
 - Live catalog:      GET https://bharatcode.ai/api/model/v1/models (public, no key needed)
 
 ENDPOINT
-- Base URL: https://bharatcode.ai/api/model/v1   (env: BHARATCODE_BASE_URL)
-- Auth:     Authorization: Bearer <BHARATCODE_API_KEY>   (server-side only; never sent to the browser)
-- Protocol: OpenAI-compatible. Clavion uses the official `openai` Python SDK with base_url set.
+- Base URL: https://bharatcode.ai/api/model/v1   (env BHARATCODE_BASE_URL)
+    NOTE: https://bharatcode.ai/api/v1 (without /model) is NOT the API. It returns a 404 HTML page.
+- Auth:     Authorization: Bearer <BHARATCODE_API_KEY>   (server-side only)
+- Protocol: OpenAI-compatible (stated in the docs). Clavion uses the official `openai` Python SDK with base_url set.
 - Endpoints documented:
     POST /chat/completions   <- used by Clavion
     POST /responses          (stateless only: store:false; no previous_response_id, hosted tools,
                               background jobs, audio/video/file input -> 400)
     GET  /models
 
-MODELS (from the live /models catalog, 2026-11-04)
+MODELS (live /models catalog, 2026-11-04; catalog metadata, NOT verified capabilities)
   id                    context    max_output  input        toolCalling  reasoning  access
-  qwen-3.8-27b          262,144    32,000      text, image  true         true       Students, Lite, Pro
+  qwen-3.8-27b          262,144    32,000      text, image  true         true       Lite, Pro, verified students
   deepseek-v4.1-flash   1,000,000  32,000      text, image  true         true       Pro only (8 MB input cap)
-Default model: qwen-3.8-27b  (env: BHARATCODE_MODEL)
+Default model: qwen-3.8-27b  (env BHARATCODE_MODEL)
 
 LIMITS (from docs)
 - Students: 10M tokens/day. Lite/Pro: no daily allowance. Shared capacity; requests may queue.
-- Output cap 32k tokens INCLUDING reasoning tokens -> always set max_tokens generously, or the
-  visible answer can be empty.
-- 503 = busy, retry after a few seconds. The SDK is configured with max_retries=3.
+- Output cap 32k tokens INCLUDING reasoning. finish_reason "length" = budget exhausted -> raise max_tokens.
+- 503 = busy, retry after a few seconds.
 
-VERIFICATION STATUS
-  [VERIFIED]   /models reachable from the backend; qwen-3.8-27b listed with image + toolCalling.
-  [UNVERIFIED] Live text completion         -- no API key available yet
-  [UNVERIFIED] JSON mode (response_format)  -- docs mention structured output only for /responses
-  [UNVERIFIED] Image input via chat/completions (data: URL)
-  [UNVERIFIED] Tool calling via chat/completions
-  Run:  cd backend && python scripts/check_bharatcode.py
-  and update this section with the actual PASS/FAIL output.
+ERROR RESPONSES (observed live)
+  HTTP 401  {"error":{"type":"invalid_credentials","code":"invalid_credentials",
+             "message":"Invalid BharatCode OAuth session. ..."}}                 <- bogus key
+  HTTP 402  {"error":{"type":"subscription_required","code":"subscription_required",
+             "message":"Coding and API use need BharatCode Lite (Rs 399/month, Qwen 3.8 27B) or Pro
+             (Rs 999/month, Qwen and DeepSeek). Students with a verified college email get Qwen free up to
+             10M tokens a day at https://bharatcode.ai/account. ...","action_url":"https://bharatcode.ai/subscribe"}}
+                                                                                  <- valid key, no API plan
+  No x-request-id header was returned on these error responses.
+  Clavion maps them to BharatCodeError(kind="invalid_credentials") and
+  BharatCodeError(kind="access_denied", code="subscription_required").
+
+VERIFICATION STATUS (2026-11-04, account key loaded from local .env)
+  [PASS]       Catalog reachable from the backend
+  [PASS]       A2 Invalid key rejected with a distinct 401 invalid_credentials
+  [FAIL]       A  Authentication: key recognised, but HTTP 402 subscription_required on
+               qwen-3.8-27b AND deepseek-v4.1-flash. The account has no Lite/Pro/verified-student API access.
+  [NOT TESTED] B  basic inference          -- blocked by 402
+  [NOT TESTED] C  structured JSON           -- blocked by 402 (docs mention structured output only for /responses)
+  [NOT TESTED] D  image input               -- blocked by 402; image/tool scripts not run (would only repeat the 402)
+  [NOT TESTED] E  tool calling              -- blocked by 402
+  [NOT TESTED] F  synthetic bill extraction -- blocked by 402
+  Model comparison: not possible yet.
+
+HOW TO RE-RUN (from backend/, after enabling API access on the account)
+  python scripts/test_bharatcode.py --all-models    # A, A2, B, C1 (json_object), C2 (prompt-only), F (text bill)
+  python scripts/test_image_input.py --all-models   # D1 colour sanity, D2 synthetic bill image extraction
+  python scripts/test_tool_calling.py --all-models  # E1 tool call + args, E2 model uses Python result
+  Results are written to backend/scripts/results/*.json (git-ignored). A model blocked by 401/402/403
+  stops after its first failing call, so no further tokens are spent on it.
 
 HOW CLAVION USES IT
-- backend/app/llm.py         client factory, catalog lookup, ping
-- GET /api/health/llm        catalog check; ?live=true also runs one tiny completion
-- backend/scripts/check_bharatcode.py   capability probe (text, JSON, image, tools)
-- Money arithmetic is never delegated to the model; it is done in Python.
+- backend/app/core/config.py                  settings; key held as SecretStr, read only from env / .env
+- backend/app/services/bharatcode_client.py   Bearer auth, connect + request timeouts, SDK retries
+                                              (connection errors, 408/409/429/5xx; max 2), error classification,
+                                              key redaction, structured ChatResult, chat_json + Pydantic
+- backend/app/services/calculations.py        deterministic money maths (room-rent proportionate deduction)
+- backend/app/schemas/bill.py                 bill extraction schema + Python arithmetic checks
+- GET /api/health/llm[?live=true]             catalog check; live=true runs one tiny completion and
+                                              reports e.g. "inference: access_denied (subscription_required)"
 
 ENVIRONMENT NOTE
-Some networks intercept TLS; certifi then rejects bharatcode.ai. llm.py calls
+Some networks intercept TLS; certifi then rejects bharatcode.ai. The client calls
 truststore.inject_into_ssl() so Python uses the OS certificate store.

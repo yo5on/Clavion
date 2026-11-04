@@ -29,11 +29,13 @@ frontend/  React 19 + TypeScript + Vite + Tailwind v4 + lucide-react
   src/components/       Layout (sidebar shell), Logo
   src/pages/            Dashboard, placeholders for upcoming pages
 backend/   Python + FastAPI + Pydantic + SQLAlchemy (SQLite)
-  app/config.py         settings from env / backend/.env
-  app/llm.py            BharatCode client (OpenAI-compatible SDK)
+  app/core/config.py    settings from env / .env (key held as SecretStr)
+  app/services/bharatcode_client.py   BharatCode client: auth, timeouts, retries, error classification
+  app/services/calculations.py        deterministic money maths
+  app/schemas/bill.py   bill extraction schema + Python arithmetic checks
   app/db.py             engine, Case model (stores results, not uploaded documents)
   app/main.py           app, CORS, /api/health, /api/health/llm
-  scripts/check_bharatcode.py   live capability probe
+  scripts/test_*.py     live capability tests (auth, inference, JSON, image, tools) on a SYNTHETIC bill
   tests/                pytest
 ```
 
@@ -50,7 +52,7 @@ Requirements: Python 3.11+, Node 20+.
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env        # then set BHARATCODE_API_KEY
+cp ../.env.example ../.env  # then set BHARATCODE_API_KEY (repo-root .env or backend/.env)
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
@@ -64,8 +66,13 @@ Check the BharatCode integration against the live API:
 
 ```bash
 cd backend
-python scripts/check_bharatcode.py
+python scripts/test_bharatcode.py --all-models
+python scripts/test_image_input.py --all-models
+python scripts/test_tool_calling.py --all-models
 ```
+
+API calls need a BharatCode Lite, Pro or verified-student plan; without one the API returns HTTP 402
+`subscription_required` and the scripts stop after the first call.
 
 ## Tests
 
@@ -76,5 +83,5 @@ cd frontend && npm run build && npm run lint
 
 ## Security notes
 
-- The API key lives only in `backend/.env` (git-ignored). Health endpoints report whether it is set, never its value.
+- The API key lives only in `.env` (git-ignored) and is held as a `SecretStr`; errors and logs redact it. Health endpoints report whether it is set, never its value.
 - Uploaded documents are not persisted (from Phase 2 on, they are processed in memory and only extracted results are saved).

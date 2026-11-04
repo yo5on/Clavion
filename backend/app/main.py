@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import llm
-from .config import settings
+from .core.config import settings
+from .services.bharatcode_client import BharatCodeClient, BharatCodeError
 from .db import db_ok, init_db
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -64,22 +64,20 @@ def health() -> Health:
 def health_llm(live: bool = False) -> LLMHealth:
     """Checks the BharatCode catalog; with ?live=true also runs one tiny completion (costs tokens)."""
     out = LLMHealth(reachable=False, model=settings.bharatcode_model, model_listed=False)
+    client = BharatCodeClient(settings)
     try:
-        models = {m["id"]: m for m in llm.list_models()}
+        models = {m["id"]: m for m in client.list_models()}
         out.reachable = True
         if m := models.get(settings.bharatcode_model):
             out.model_listed = True
             out.model_capabilities = m.get("metadata")
-    except Exception as e:
-        out.error = f"catalog: {type(e).__name__}"
-        log.warning("BharatCode catalog check failed: %s", e)
+    except BharatCodeError as e:
+        out.error = f"catalog: {e.kind}"
+        log.warning("BharatCode catalog check failed: %s", e.kind)
         return out
     if live:
         try:
-            out.live_inference = bool(llm.ping())
-        except llm.LLMNotConfigured:
-            out.live_inference, out.error = False, "BHARATCODE_API_KEY is not set"
-        except Exception as e:
-            out.live_inference, out.error = False, f"inference: {type(e).__name__}"
-            log.warning("BharatCode live inference failed: %s", type(e).__name__)
+            out.live_inference = bool(client.ping())
+        except BharatCodeError as e:
+            out.live_inference, out.error = False, f"inference: {e.kind}" + (f" ({e.code})" if e.code else "")
     return out
