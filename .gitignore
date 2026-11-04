@@ -8,3 +8,4 @@ dist/
 uploads/
 .claude/settings.local.json
 backend/scripts/results/
+backend/.provider_status.json

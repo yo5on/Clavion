@@ -1,65 +1,76 @@
-import { FilePlus2, FolderClock, LayoutDashboard, Menu, X } from 'lucide-react'
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Menu, Plus, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import Logo from './Logo'
+import { btn } from './ui'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/audit/new', label: 'New audit', icon: FilePlus2 },
-  { to: '/cases', label: 'Case history', icon: FolderClock },
+  { to: '/', label: 'Overview', end: true },
+  { to: '/audit/new', label: 'New audit' },
+  { to: '/cases', label: 'Case history' },
 ]
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
 
   return (
-    <div className="min-h-screen lg:flex">
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-navy-900 text-slate-300 transition-transform lg:static lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex h-16 items-center justify-between px-5">
-          <Logo />
-          <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">
-            <X className="size-5" />
+    <div className="flex min-h-screen flex-col">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:text-white">
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-40 border-b border-hairline bg-canvas">
+        <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-5 sm:px-8">
+          <Link to="/" aria-label="Clavion overview" className="-m-1 rounded-md p-1" onClick={() => setOpen(false)}>
+            <Logo />
+          </Link>
+          <nav aria-label="Main" className="hidden items-center gap-8 md:flex">
+            {nav.filter((n) => n.to !== '/audit/new').map(({ to, label, end }) => (
+              <NavLink key={to} to={to} end={end}
+                className={({ isActive }) => `rounded-sm text-sm transition-colors duration-200 ${isActive ? 'text-ink' : 'text-mute hover:text-ink'}`}>
+                {label}
+              </NavLink>
+            ))}
+            <Link to="/audit/new" className={`${btn.primarySm} h-8 px-3.5 text-[13px]`}>
+              <Plus className="size-3.5" strokeWidth={2.25} /> New audit
+            </Link>
+          </nav>
+          <button className={`${btn.icon} -mr-2 md:hidden`} onClick={() => setOpen((o) => !o)} aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="mobile-nav">
+            {open ? <X className="size-5" strokeWidth={1.75} /> : <Menu className="size-5" strokeWidth={1.75} />}
           </button>
         </div>
-        <nav className="mt-4 space-y-1 px-3">
-          {nav.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-navy-700 text-white' : 'hover:bg-navy-800 hover:text-white'
-                }`
-              }
-            >
-              <Icon className="size-4" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <p className="absolute bottom-5 left-5 right-5 text-xs leading-relaxed text-slate-500">
-          Clavion explains settlements; it does not give legal advice or guarantee recovery.
-        </p>
-      </aside>
-      {open && <div className="fixed inset-0 z-30 bg-navy-950/50 lg:hidden" onClick={() => setOpen(false)} />}
+        {open && (
+          <nav id="mobile-nav" aria-label="Main" className="absolute inset-x-0 top-full h-[calc(100dvh-3.5rem)] animate-fade-in bg-canvas px-5 pt-6 sm:px-8 md:hidden">
+            <ul className="space-y-1">
+              {nav.map(({ to, label, end }) => (
+                <li key={to}>
+                  <NavLink to={to} end={end} onClick={() => setOpen(false)}
+                    className={({ isActive }) => `block py-2 text-[28px] font-semibold tracking-[-0.02em] transition-colors ${isActive ? 'text-ink' : 'text-mute hover:text-ink'}`}>
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+      </header>
 
-      <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/80 px-4 backdrop-blur sm:px-8">
-          <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
-            <Menu className="size-5" />
-          </button>
-          <p className="text-sm text-slate-500">Every deduction deserves an explanation.</p>
-        </header>
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
-          <Outlet />
-        </main>
-      </div>
+      <main id="main" key={pathname} className="mx-auto w-full max-w-[1120px] flex-1 animate-page-in px-5 pb-24 sm:px-8">
+        <Outlet />
+      </main>
+
+      <footer className="border-t border-hairline">
+        <p className="mx-auto max-w-[1120px] px-5 py-6 text-xs leading-relaxed text-mute sm:px-8">
+          Clavion explains settlements. It does not give legal advice or guarantee recovery.
+        </p>
+      </footer>
     </div>
   )
 }

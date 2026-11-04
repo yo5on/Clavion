@@ -59,6 +59,11 @@ HOW TO RE-RUN (from backend/, after enabling API access on the account)
   Results are written to backend/scripts/results/*.json (git-ignored). A model blocked by 401/402/403
   stops after its first failing call, so no further tokens are spent on it.
 
+IN-APP STATUS (2026-11-04)
+  POST /api/providers/bharatcode/check made one live call: subscription_required (HTTP 402).
+  The bharatcode provider stays disabled; all extraction and audits run on the local deterministic provider.
+  The hackathon BharatCode API requirement is NOT complete.
+
 HOW CLAVION USES IT
 - backend/app/core/config.py                  settings; key held as SecretStr, read only from env / .env
 - backend/app/services/bharatcode_client.py   Bearer auth, connect + request timeouts, SDK retries
@@ -68,6 +73,10 @@ HOW CLAVION USES IT
 - backend/app/schemas/bill.py                 bill extraction schema + Python arithmetic checks
 - GET /api/health/llm[?live=true]             catalog check; live=true runs one tiny completion and
                                               reports e.g. "inference: access_denied (subscription_required)"
+- backend/app/services/providers.py           BharatCodeProvider: structured extraction via chat_json, used only
+                                              when the last live check returned "connected"; status states
+                                              connected | not_configured | subscription_required |
+                                              connection_failed (| not_checked before the first check)
 
 ENVIRONMENT NOTE
 Some networks intercept TLS; certifi then rejects bharatcode.ai. The client calls

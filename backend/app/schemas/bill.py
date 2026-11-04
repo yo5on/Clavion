@@ -20,6 +20,7 @@ class BillLineItem(BaseModel):
     quantity: Decimal | None = None
     unit_price: Decimal | None = None
     amount: Decimal
+    category: str | None = None  # set by the local parser or manual correction; see services/parsers.categorize
 
     _clean = field_validator("quantity", "unit_price", "amount", mode="before")(_money)
 
