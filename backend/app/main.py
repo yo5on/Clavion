@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from .core.config import settings
 from .services.bharatcode_client import BharatCodeClient, BharatCodeError
 from .db import db_ok, init_db
+from .routes import router
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("clavion")
@@ -29,6 +30,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(router)
 
 
 class Health(BaseModel):

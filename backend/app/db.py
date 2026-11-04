@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import JSON, DateTime, String, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .core.config import settings
 
-engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+# StaticPool keeps one connection, so an in-memory test database survives across sessions
+engine = create_engine(settings.database_url, connect_args={"check_same_thread": False},
+                       **({"poolclass": StaticPool} if ":memory:" in settings.database_url else {}))
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 

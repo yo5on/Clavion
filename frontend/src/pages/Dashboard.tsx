@@ -1,29 +1,49 @@
-import { ArrowRight, CheckCircle2, CircleDashed, Loader2, XCircle } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CircleDashed, FlaskConical, Loader2, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, type Health, type LLMHealth } from '../api'
-
-const kpis = [
-  'Total hospital bill',
-  'Total claimed',
-  'Amount approved',
-  'Total deductions',
-  'Potentially contestable',
-  'Findings',
-]
-
-const pipeline = [
-  'Document ingestion',
-  'Information extraction',
-  'Bill item normalisation',
-  'Policy clause retrieval',
-  'Deduction analysis',
-  'Deterministic calculation',
-  'Independent verification',
-  'Audit report',
-]
+import { Link, useNavigate } from 'react-router-dom'
+import { api, rupees, type CaseDetail, type CaseSummary, type Health, type LLMHealth } from '../api'
+import ProviderStatus from '../components/ProviderStatus'
+import { Card, DemoBanner, ErrorNote, btn } from '../components/ui'
 
 export default function Dashboard() {
+  const [cases, setCases] = useState<CaseSummary[] | null>(null)
+  const [latest, setLatest] = useState<CaseDetail | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loadingDemo, setLoadingDemo] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    api
+      .cases()
+      .then((cs) => {
+        setCases(cs)
+        const audited = cs.find((c) => c.status === 'audited')
+        if (audited) api.case(audited.id).then(setLatest)
+      })
+      .catch((e) => setError(e.message))
+  }, [])
+
+  async function demo() {
+    setLoadingDemo(true)
+    try {
+      const c = await api.demoCase()
+      navigate(`/cases/${c.id}?tab=audit`)
+    } catch (e) {
+      setError((e as Error).message)
+      setLoadingDemo(false)
+    }
+  }
+
+  const a = latest?.audit
+  const kpis: [string, string, string?][] = [
+    ['Total hospital bill', rupees(a?.bill_total)],
+    ['Total claimed', rupees(a?.claimed_amount)],
+    ['Amount approved', rupees(a?.approved_amount)],
+    ['Total deductions', rupees(a?.total_deductions)],
+    ['Potentially contestable', rupees(a?.contestable_total), 'text-violet-700'],
+    ['Needs explanation', rupees(a?.unverified_total), 'text-amber-700'],
+  ]
+
   return (
     <div className="space-y-8">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -33,42 +53,64 @@ export default function Dashboard() {
             Upload a hospital bill, policy and settlement letter to see where every rupee went.
           </p>
         </div>
-        <Link
-          to="/audit/new"
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-brand px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-violet-700"
-        >
-          Start an audit <ArrowRight className="size-4" />
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <button className={btn.secondary} onClick={demo} disabled={loadingDemo}>
+            {loadingDemo ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+            Try the synthetic demo
+          </button>
+          <Link to="/audit/new" className={btn.primary}>
+            Start an audit <ArrowRight className="size-4" />
+          </Link>
+        </div>
       </section>
+      <ErrorNote error={error} />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {kpis.map((label) => (
-          <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-medium text-slate-500">{label}</p>
-            <p className="mt-2 text-xl font-semibold text-slate-300">—</p>
-          </div>
-        ))}
+      <section className="space-y-3">
+        {latest?.demo && <DemoBanner />}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {kpis.map(([label, value, cls]) => (
+            <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-medium text-slate-500">{label}</p>
+              <p className={`mt-2 text-lg font-semibold ${a ? (cls ?? 'text-navy-900') : 'text-slate-300'}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">
+          {latest ? (
+            <>
+              Latest audit: <Link className="text-violet-700 hover:underline" to={`/cases/${latest.id}?tab=audit`}>{latest.title}</Link>
+              {' · '}
+              {a?.method}
+            </>
+          ) : (
+            'No claim audited yet. Figures appear after an audit completes.'
+          )}
+        </p>
       </section>
-      <p className="-mt-5 text-xs text-slate-500">No claim analysed yet. Figures appear after an audit completes.</p>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2">
-          <h2 className="text-sm font-semibold text-navy-900">Analysis pipeline</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Amounts are computed in code, not by the model. Each finding links back to its source document.
-          </p>
-          <ol className="mt-5 grid gap-2 sm:grid-cols-2">
-            {pipeline.map((step, i) => (
-              <li key={step} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5 text-sm text-slate-700">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-navy-900 text-xs font-medium text-white">
-                  {i + 1}
-                </span>
-                {step}
+        <Card title="Recent cases" className="lg:col-span-2" action={<Link to="/cases" className={btn.ghost}>All cases</Link>}>
+          {cases?.length === 0 && <p className="text-sm text-slate-500">No cases yet.</p>}
+          <ul className="divide-y divide-slate-100">
+            {cases?.slice(0, 6).map((c) => (
+              <li key={c.id}>
+                <Link to={`/cases/${c.id}`} className="flex items-center justify-between gap-3 py-2.5 text-sm hover:text-violet-700">
+                  <span className="min-w-0 truncate font-medium">
+                    {c.title}
+                    {c.demo && <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800">demo</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">
+                    {c.status === 'audited' ? `${rupees(c.contestable_total)} contestable` : `${c.documents.length}/3 documents`}
+                  </span>
+                </Link>
               </li>
             ))}
-          </ol>
-        </section>
-        <SystemStatus />
+          </ul>
+        </Card>
+        <div className="space-y-6">
+          <ProviderStatus />
+          <SystemStatus />
+        </div>
       </div>
     </div>
   )
@@ -87,19 +129,13 @@ function SystemStatus() {
   const rows: [string, boolean | null, string?][] = [
     ['API server', error ? false : health ? true : null],
     ['Database', health ? health.database : error ? false : null],
-    ['BharatCode reachable', llm ? llm.reachable : error ? false : null, llm?.model],
+    ['BharatCode catalog reachable', llm ? llm.reachable : error ? false : null, llm?.model],
     ['API key configured', health ? health.llm_configured : error ? false : null],
-    [
-      'Image input supported',
-      llm ? !!llm.model_capabilities?.input?.includes('image') : error ? false : null,
-    ],
-    ['Tool calling supported', llm ? !!llm.model_capabilities?.toolCalling : error ? false : null],
   ]
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6">
-      <h2 className="text-sm font-semibold text-navy-900">System status</h2>
-      <ul className="mt-4 space-y-3">
+    <Card title="System status">
+      <ul className="space-y-3">
         {rows.map(([label, ok, note]) => (
           <li key={label} className="flex items-center justify-between gap-3 text-sm">
             <span className="text-slate-700">{label}</span>
@@ -118,8 +154,8 @@ function SystemStatus() {
       </ul>
       <p className="mt-5 flex items-start gap-2 text-xs text-slate-500">
         <CircleDashed className="mt-0.5 size-3.5 shrink-0" />
-        Capabilities come from the BharatCode model catalog; run the feasibility probe to verify them live.
+        Catalog reachability is not inference: only a successful live check marks BharatCode as connected.
       </p>
-    </section>
+    </Card>
   )
 }
