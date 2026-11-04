@@ -1,7 +1,7 @@
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, type Provider } from '../api'
-import { Card, ErrorNote, PROVIDER_STATE, Spinner, btn } from './ui'
+import { ErrorNote, PROVIDER_STATE, Skeleton, btn, eyebrow } from './ui'
 
 export function useProviders() {
   const [providers, setProviders] = useState<Provider[] | null>(null)
@@ -31,37 +31,42 @@ export default function ProviderStatus() {
   }
 
   return (
-    <Card title="Analysis providers">
-      <ErrorNote error={error ?? checkError} />
-      {!providers && !error && <Spinner label="Loading…" />}
-      <ul className="space-y-4">
+    <div>
+      <h3 className={eyebrow}>Analysis providers</h3>
+      <div className="mt-3 space-y-3">
+        <ErrorNote error={error ?? checkError} />
+        {!providers && !error && [0, 1].map((i) => <Skeleton key={i} className="h-9" />)}
+      </div>
+      <ul className="divide-y divide-line">
         {providers?.map((p) => {
           const [label, cls, Icon] = PROVIDER_STATE[p.status.state]
           return (
-            <li key={p.id} className="text-sm">
+            <li key={p.id} className="py-3 text-sm first:pt-0 last:pb-0">
               <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-800">{p.label}</span>
-                <span className={`flex items-center gap-1.5 text-xs font-medium ${cls}`}>
-                  <Icon className="size-4" /> {label}
+                <span className="font-medium text-navy-900">{p.label}</span>
+                <span className={`flex shrink-0 items-center gap-1.5 text-xs font-medium ${cls}`}>
+                  <Icon className="size-3.5" /> {label}
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {p.status.detail}
-                {p.status.checked_at && ` Last checked ${new Date(p.status.checked_at).toLocaleString()}.`}
-              </p>
+              {(p.status.detail || p.status.checked_at) && (
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                  {p.status.detail}
+                  {p.status.checked_at && ` Last checked ${new Date(p.status.checked_at).toLocaleString()}.`}
+                </p>
+              )}
               {p.id === 'bharatcode' && p.status.state !== 'not_configured' && (
-                <button className={`${btn.ghost} mt-1`} onClick={check} disabled={checking}>
-                  <RefreshCw className={`size-3.5 ${checking ? 'animate-spin' : ''}`} /> Check connection
+                <button className={`${btn.ghost} -ml-1.5 mt-1`} onClick={check} disabled={checking}>
+                  <RefreshCw className={`size-3.5 ${checking ? 'animate-spin' : ''}`} /> {checking ? 'Checking…' : 'Check connection'}
                 </button>
               )}
             </li>
           )
         })}
       </ul>
-      <p className="mt-4 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
         All audits currently run on local deterministic rules. No result is presented as BharatCode inference unless
         a live BharatCode call actually produced it.
       </p>
-    </Card>
+    </div>
   )
 }

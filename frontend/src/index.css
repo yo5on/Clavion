@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
 
   --color-navy-950: #070b1d;
   --color-navy-900: #0b1026;
@@ -10,9 +12,49 @@
   --color-navy-600: #2c3768;
 
   --color-violet-brand: #7c3aed;
-  --color-surface: #f7f7fb;
+  --color-surface: #f6f6f9;
+  --color-line: #e3e4ec;
+
+  /* Finding status system: neutral = settled, violet = actionable, amber = needs information. */
+  --color-supported: #8e98ad;
+  --color-contestable: #7c3aed;
+  --color-unverified: #e29a2d;
+
+  --animate-toast-in: toast-in 180ms ease-out;
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(6px); }
+  }
 }
 
-body {
-  @apply bg-surface text-slate-900 antialiased;
+@layer base {
+  body {
+    @apply bg-surface font-sans text-[15px] text-slate-800 antialiased;
+  }
+  ::selection {
+    @apply bg-violet-100 text-navy-900;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-violet-brand);
+    outline-offset: 2px;
+  }
+  h1, h2, h3 {
+    @apply text-navy-900;
+  }
+}
+
+/* Ledger fills: shared by the reconciliation bar, breakdown bars and legend swatches. */
+.fill-approved { background: var(--color-navy-800); }
+.fill-supported { background: var(--color-supported); }
+.fill-contestable {
+  background: repeating-linear-gradient(-45deg, var(--color-contestable) 0 3px, #a17af2 3px 5px);
+}
+.fill-unverified {
+  background: radial-gradient(circle, #b8740f 0.8px, transparent 1.2px) 0 0 / 4px 4px, var(--color-unverified);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

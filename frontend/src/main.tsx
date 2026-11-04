@@ -8,10 +8,12 @@ import Cases from './pages/Cases'
 import Dashboard from './pages/Dashboard'
 import NewAudit from './pages/NewAudit'
 import NotYetAvailable from './pages/NotYetAvailable'
+import { ToastProvider } from './components/ui'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
+      <ToastProvider>
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
@@ -21,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="*" element={<NotYetAvailable title="Page not found" body="This page does not exist." />} />
         </Route>
       </Routes>
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 )

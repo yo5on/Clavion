@@ -181,9 +181,11 @@ export interface CaseSummary {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, init)
+  const r = await fetch(path, init).catch(() => {
+    throw new Error('Cannot reach the Clavion server. Check your connection and that the backend is running.')
+  })
   if (!r.ok) {
-    let msg = `${r.status}`
+    let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).` : `Request failed (${r.status}).`
     try {
       const body = await r.json()
       msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)

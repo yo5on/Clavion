@@ -1,10 +1,10 @@
 import { FilePlus2, FolderClock, LayoutDashboard, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import Logo from './Logo'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/audit/new', label: 'New audit', icon: FilePlus2 },
   { to: '/cases', label: 'Case history', icon: FolderClock },
 ]
@@ -12,20 +12,28 @@ const nav = [
 export default function Layout() {
   const [open, setOpen] = useState(false)
 
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
   return (
     <div className="min-h-screen lg:flex">
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-navy-900 text-slate-300 transition-transform lg:static lg:translate-x-0 ${
+        aria-label="Main navigation"
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-navy-900 text-slate-400 transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-16 items-center justify-between px-5">
+        <div className="flex h-16 items-center justify-between border-b border-white/5 px-5">
           <Logo />
-          <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">
+          <button className="text-slate-400 hover:text-white lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">
             <X className="size-5" />
           </button>
         </div>
-        <nav className="mt-4 space-y-1 px-3">
+        <nav className="mt-5 space-y-0.5 px-3">
           {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -33,30 +41,32 @@ export default function Layout() {
               end={end}
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-navy-700 text-white' : 'hover:bg-navy-800 hover:text-white'
+                `relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-white/[0.06] text-white before:absolute before:inset-y-1.5 before:-left-3 before:w-0.5 before:rounded-r before:bg-violet-500'
+                    : 'hover:bg-white/[0.04] hover:text-slate-100'
                 }`
               }
             >
-              <Icon className="size-4" />
+              <Icon className="size-4" strokeWidth={1.75} />
               {label}
             </NavLink>
           ))}
         </nav>
-        <p className="absolute bottom-5 left-5 right-5 text-xs leading-relaxed text-slate-500">
-          Clavion explains settlements; it does not give legal advice or guarantee recovery.
+        <p className="mt-auto border-t border-white/5 px-5 py-4 text-xs leading-relaxed text-slate-500">
+          Clavion explains settlements. It does not give legal advice or guarantee recovery.
         </p>
       </aside>
-      {open && <div className="fixed inset-0 z-30 bg-navy-950/50 lg:hidden" onClick={() => setOpen(false)} />}
+      {open && <div className="fixed inset-0 z-30 bg-navy-950/50 lg:hidden" onClick={() => setOpen(false)} aria-hidden />}
 
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/80 px-4 backdrop-blur sm:px-8">
-          <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/5 bg-navy-900 px-4 lg:hidden">
+          <Logo />
+          <button className="rounded-md p-1.5 text-slate-300 hover:bg-white/5" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}>
             <Menu className="size-5" />
           </button>
-          <p className="text-sm text-slate-500">Every deduction deserves an explanation.</p>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
+        <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10">
           <Outlet />
         </main>
       </div>
