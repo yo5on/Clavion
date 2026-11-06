@@ -34,6 +34,7 @@ BILL_TEXT = "\n".join([
     "FINAL IN-PATIENT BILL",
     "Bill No: SMH/IP/2026/004521    Bill Date: 12-Oct-2026",
     "Patient Name: Asha Verma",
+    "Date of Admission: 08-Oct-2026    Date of Discharge: 12-Oct-2026",
     "",
     "    Description                                Qty   Rate (Rs)     Amount (Rs)",
     *(f"{i:>2}. {d:<42} {q:>3} x {D(r):>10,.2f} = {D(a):>11,.2f}" for i, (d, q, r, a, _) in enumerate(BILL_ITEMS, 1)),
@@ -134,6 +135,7 @@ def ground_truth(doc_type: str):
     if doc_type == "bill":
         return HospitalBill(hospital_name="Sunrise Multispeciality Hospital", bill_number="SMH/IP/2026/004521",
                             patient_name="Asha Verma", bill_date="12-Oct-2026", total_amount=BILL_TOTAL,
+                            admission_date="08-Oct-2026", discharge_date="12-Oct-2026",
                             line_items=[BillLineItem(description=d, quantity=q, unit_price=r, amount=a, category=c)
                                         for d, q, r, a, c in BILL_ITEMS])
     if doc_type == "policy":
@@ -169,10 +171,11 @@ def render_pdf(text: str) -> bytes:
     from fpdf import FPDF
 
     pdf = FPDF()
-    pdf.add_page()
     pdf.set_font("Courier", size=8)
-    for line in text.splitlines():
-        pdf.cell(0, 4.2, line, new_x="LMARGIN", new_y="NEXT")
+    for page in text.split("\f"):  # a form feed starts a new page
+        pdf.add_page()
+        for line in page.split("\n"):
+            pdf.cell(0, 4.2, line, new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())
 
 

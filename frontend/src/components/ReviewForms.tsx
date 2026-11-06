@@ -1,15 +1,59 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus, Trash2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import {
   CATEGORY_LABELS,
+  where,
   type BillLineItem,
+  type FieldMeta,
   type HospitalBill,
   type PolicyDocument,
   type SettlementLetter,
 } from '../api'
 import { Amount, Field, btn, cell, input } from './ui'
 
-type Editor<T> = { value: T; onSave: (v: T) => Promise<void>; text: string }
+type Fields = Record<string, FieldMeta>
+type Editor<T> = { value: T; onSave: (v: T) => Promise<void>; text: string; fields?: Fields }
+
+// Status and source of each extracted field, so every value on the review screen says where it came from.
+const FieldsContext = createContext<Fields>({})
+
+const STATUS_NOTE: Record<FieldMeta['status'], [string, string]> = {
+  extracted: ['Read from', 'text-mute'],
+  inferred: ['Inferred', 'text-caution'],
+  missing: ['Not found in the document', 'text-caution'],
+  corrected: ['Corrected by you', 'text-ink-2'],
+}
+
+/** One line under a field: how the value was obtained and where it was read. */
+export function FieldNote({ m }: { m: FieldMeta | undefined }) {
+  if (!m) return null
+  const [label, cls] = STATUS_NOTE[m.status]
+  const loc = where(m.source)
+  const text = m.status === 'extracted' ? `${label} ${loc}` : [label, m.note, m.status !== 'missing' && loc].filter(Boolean).join(' · ')
+  return <span className={`block text-xs font-normal ${cls}`} title={m.source?.text}>{text}</span>
+}
+
+/** Row sources for a table, kept aligned with the draft's rows as they are edited, added and removed. */
+function useRowMeta(fields: Fields | undefined, prefix: string, n: number) {
+  const [rows, setRows] = useState<(FieldMeta | undefined)[]>(() => Array.from({ length: n }, (_, i) => fields?.[`${prefix}.${i}`]))
+  const [inferredQty, setInferredQty] = useState<boolean[]>(() => Array.from({ length: n }, (_, i) => fields?.[`${prefix}.${i}.quantity`]?.status === 'inferred'))
+  return {
+    rows, inferredQty,
+    remove: (i: number) => { setRows((r) => r.filter((_, j) => j !== i)); setInferredQty((r) => r.filter((_, j) => j !== i)) },
+    add: () => { setRows((r) => [...r, { status: 'corrected', source: null, note: 'added by you' }]); setInferredQty((r) => [...r, false]) },
+    edit: (i: number) => setRows((r) => r.map((m, j) => (j === i && m?.status !== 'corrected' ? { status: 'corrected', source: m?.source ?? null, note: null } : m))),
+  }
+}
+
+function RowSource({ m, qty }: { m: FieldMeta | undefined; qty?: boolean }) {
+  if (!m) return <span className="text-xs text-faint">—</span>
+  return (
+    <span className={`block whitespace-nowrap text-xs ${m.status === 'corrected' ? 'text-ink-2' : 'text-mute'}`} title={m.source?.text}>
+      {m.status === 'corrected' ? (m.source ? 'Edited' : 'Added') : m.source ? `p.${m.source.page} l.${m.source.line}` : m.status}
+      {qty && <span className="block text-caution">qty inferred</span>}
+    </span>
+  )
+}
 
 // Sum shown for review only; the audit recomputes every total in Python with Decimal.
 const displaySum = (xs: (string | null)[]) => xs.reduce((s, x) => s + (Number(x) || 0), 0).toFixed(2)
@@ -76,8 +120,9 @@ function Grid({ children }: { children: ReactNode }) {
 }
 
 function TextField<T>({ label, obj, k, set, money }: { label: string; obj: T; k: keyof T; set: (k: keyof T, v: never) => void; money?: boolean }) {
+  const m = useContext(FieldsContext)[k as string]
   return (
-    <Field label={label}>
+    <Field label={label} hint={<FieldNote m={m} />}>
       <input className={`${input} ${money ? 'text-right tabular-nums' : ''}`} inputMode={money ? 'decimal' : undefined}
         value={text(obj[k] as string | null)} onChange={(e) => set(k, nullable(e.target.value) as never)} />
     </Field>
@@ -128,29 +173,35 @@ function TotalRow({ span, label, sum }: { span: number; label: string; sum: stri
   )
 }
 
-export function BillEditor({ value, onSave, text: raw }: Editor<HospitalBill>) {
+export function BillEditor({ value, onSave, text: raw, fields }: Editor<HospitalBill>) {
   const { draft, set, saving, save, dirty } = useDraft(value, onSave)
   const items = draft.line_items
-  const setItem = (i: number, patch: Partial<BillLineItem>) =>
+  const meta = useRowMeta(fields, 'line_items', items.length)
+  const setItem = (i: number, patch: Partial<BillLineItem>) => {
+    meta.edit(i)
     set('line_items', items.map((it, j) => (j === i ? { ...it, ...patch } : it)))
+  }
   const sum = displaySum(items.map((i) => i.amount))
 
   return (
-    <div>
+    <FieldsContext.Provider value={fields ?? {}}>
       <Group title="Bill details">
         <Grid>
           <TextField label="Hospital" obj={draft} k="hospital_name" set={set} />
           <TextField label="Patient" obj={draft} k="patient_name" set={set} />
           <TextField label="Bill number" obj={draft} k="bill_number" set={set} />
           <TextField label="Bill date" obj={draft} k="bill_date" set={set} />
+          <TextField label="Date of admission" obj={draft} k="admission_date" set={set} />
+          <TextField label="Date of discharge" obj={draft} k="discharge_date" set={set} />
           <TextField label="Stated bill total (₹)" obj={draft} k="total_amount" set={set} money />
         </Grid>
       </Group>
       <Group title={`Line items · ${items.length}`}>
-        <TableFrame minWidth="680px">
+        <TableFrame minWidth="760px">
           <thead className="border-b border-hairline">
             <tr>
               <th className={`${th} w-10 pl-3`}>#</th>
+              <th className={`${th} w-20`}>Source</th>
               <th className={`${th} min-w-56`}>Description</th>
               <th className={`${th} w-44`}>Category</th>
               <th className={`${th} w-20 text-right`}>Qty</th>
@@ -163,6 +214,7 @@ export function BillEditor({ value, onSave, text: raw }: Editor<HospitalBill>) {
             {items.map((it, i) => (
               <tr key={i} className="transition-colors duration-150 hover:bg-tile/50">
                 <td className="pl-3 text-sm tabular-nums text-mute">{i + 1}</td>
+                <td className="px-2"><RowSource m={meta.rows[i]} qty={meta.inferredQty[i]} /></td>
                 <td className={td}><input className={cell} aria-label={`Line ${i + 1} description`} value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} /></td>
                 <td className={td}>
                   <select className={cell} aria-label={`Line ${i + 1} category`} value={it.category ?? 'other'} onChange={(e) => setItem(i, { category: e.target.value })}>
@@ -172,32 +224,35 @@ export function BillEditor({ value, onSave, text: raw }: Editor<HospitalBill>) {
                 <td className={td}><input className={num} inputMode="decimal" aria-label={`Line ${i + 1} quantity`} value={text(it.quantity)} onChange={(e) => setItem(i, { quantity: nullable(e.target.value) })} /></td>
                 <td className={td}><input className={num} inputMode="decimal" aria-label={`Line ${i + 1} rate`} value={text(it.unit_price)} onChange={(e) => setItem(i, { unit_price: nullable(e.target.value) })} /></td>
                 <td className={td}><input className={`${num} font-medium`} inputMode="decimal" aria-label={`Line ${i + 1} amount`} value={it.amount} onChange={(e) => setItem(i, { amount: e.target.value })} /></td>
-                <td className={td}><RemoveButton label={`Remove line ${i + 1}`} onClick={() => set('line_items', items.filter((_, j) => j !== i))} /></td>
+                <td className={td}><RemoveButton label={`Remove line ${i + 1}`} onClick={() => { meta.remove(i); set('line_items', items.filter((_, j) => j !== i)) }} /></td>
               </tr>
             ))}
           </tbody>
-          <TotalRow span={5} label="Lines add up to" sum={sum} />
+          <TotalRow span={6} label="Lines add up to" sum={sum} />
         </TableFrame>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" className={btn.linkSm} onClick={() => set('line_items', [...items, { description: '', quantity: null, unit_price: null, amount: '0', category: 'other' }])}>
+          <button type="button" className={btn.linkSm} onClick={() => { meta.add(); set('line_items', [...items, { description: '', quantity: null, unit_price: null, amount: '0', category: 'other' }]) }}>
             <Plus className="size-4" /> Add line
           </button>
           <Reconcile sum={sum} stated={draft.total_amount} what="bill total" />
         </div>
       </Group>
       <SaveBar saving={saving} dirty={dirty} onSave={save} raw={raw} />
-    </div>
+    </FieldsContext.Provider>
   )
 }
 
-export function SettlementEditor({ value, onSave, text: raw }: Editor<SettlementLetter>) {
+export function SettlementEditor({ value, onSave, text: raw, fields }: Editor<SettlementLetter>) {
   const { draft, set, saving, save, dirty } = useDraft(value, onSave)
   const ded = draft.deductions
-  const setDed = (i: number, patch: Partial<SettlementLetter['deductions'][number]>) =>
+  const meta = useRowMeta(fields, 'deductions', ded.length)
+  const setDed = (i: number, patch: Partial<SettlementLetter['deductions'][number]>) => {
+    meta.edit(i)
     set('deductions', ded.map((d, j) => (j === i ? { ...d, ...patch } : d)))
+  }
   const sum = displaySum(ded.map((d) => d.amount))
   return (
-    <div>
+    <FieldsContext.Provider value={fields ?? {}}>
       <Group title="Claim">
         <Grid>
           <TextField label="Insurer" obj={draft} k="insurer_name" set={set} />
@@ -211,14 +266,16 @@ export function SettlementEditor({ value, onSave, text: raw }: Editor<Settlement
         <Grid>
           <TextField label="Amount claimed (₹)" obj={draft} k="claimed_amount" set={set} money />
           <TextField label="Amount approved (₹)" obj={draft} k="approved_amount" set={set} money />
+          <TextField label="Amount paid (₹)" obj={draft} k="paid_amount" set={set} money />
           <TextField label="Stated total deductions (₹)" obj={draft} k="total_deductions" set={set} money />
         </Grid>
       </Group>
       <Group title={`Deductions listed by the insurer · ${ded.length}`}>
-        <TableFrame minWidth="560px">
+        <TableFrame minWidth="640px">
           <thead className="border-b border-hairline">
             <tr>
               <th className={`${th} w-10 pl-3`}>#</th>
+              <th className={`${th} w-20`}>Source</th>
               <th className={`${th} min-w-56`}>Deduction as stated</th>
               <th className={`${th} w-28`}>Clause cited</th>
               <th className={`${th} w-32 text-right`}>Amount (₹)</th>
@@ -229,33 +286,34 @@ export function SettlementEditor({ value, onSave, text: raw }: Editor<Settlement
             {ded.map((d, i) => (
               <tr key={i} className="transition-colors duration-150 hover:bg-tile/50">
                 <td className="pl-3 text-sm tabular-nums text-mute">{i + 1}</td>
+                <td className="px-2"><RowSource m={meta.rows[i]} /></td>
                 <td className={td}><input className={cell} aria-label={`Deduction ${i + 1} description`} value={d.description} onChange={(e) => setDed(i, { description: e.target.value })} /></td>
                 <td className={td}><input className={`${cell} tabular-nums`} aria-label={`Deduction ${i + 1} clause`} value={text(d.clause_ref)} onChange={(e) => setDed(i, { clause_ref: nullable(e.target.value) })} /></td>
                 <td className={td}><input className={`${num} font-medium`} inputMode="decimal" aria-label={`Deduction ${i + 1} amount`} value={d.amount} onChange={(e) => setDed(i, { amount: e.target.value })} /></td>
-                <td className={td}><RemoveButton label={`Remove deduction ${i + 1}`} onClick={() => set('deductions', ded.filter((_, j) => j !== i))} /></td>
+                <td className={td}><RemoveButton label={`Remove deduction ${i + 1}`} onClick={() => { meta.remove(i); set('deductions', ded.filter((_, j) => j !== i)) }} /></td>
               </tr>
             ))}
           </tbody>
-          <TotalRow span={3} label="Itemised deductions add up to" sum={sum} />
+          <TotalRow span={4} label="Itemised deductions add up to" sum={sum} />
         </TableFrame>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" className={btn.linkSm} onClick={() => set('deductions', [...ded, { description: '', amount: '0', clause_ref: null }])}>
+          <button type="button" className={btn.linkSm} onClick={() => { meta.add(); set('deductions', [...ded, { description: '', amount: '0', clause_ref: null }]) }}>
             <Plus className="size-4" /> Add deduction
           </button>
           <Reconcile sum={sum} stated={draft.total_deductions} what="total deductions" />
         </div>
       </Group>
       <SaveBar saving={saving} dirty={dirty} onSave={save} raw={raw} />
-    </div>
+    </FieldsContext.Provider>
   )
 }
 
 const EXCLUDABLE = ['pharmacy', 'consumables', 'implants', 'diagnostics', 'icu']
 
-export function PolicyEditor({ value, onSave, text: raw }: Editor<PolicyDocument>) {
+export function PolicyEditor({ value, onSave, text: raw, fields }: Editor<PolicyDocument>) {
   const { draft, set, saving, save, dirty } = useDraft(value, onSave)
   return (
-    <div>
+    <FieldsContext.Provider value={fields ?? {}}>
       <Group title="Policy">
         <Grid>
           <TextField label="Policy name" obj={draft} k="policy_name" set={set} />
@@ -267,6 +325,7 @@ export function PolicyEditor({ value, onSave, text: raw }: Editor<PolicyDocument
         <Grid>
           <TextField label="Room-rent limit per day (₹)" obj={draft} k="room_rent_limit_per_day" set={set} money />
           <TextField label="Room-rent clause" obj={draft} k="room_rent_clause" set={set} />
+          <TextField label="Room category limit (if no amount)" obj={draft} k="room_rent_category" set={set} />
           <TextField label="Proportionate-deduction clause" obj={draft} k="proportionate_clause" set={set} />
           <TextField label="ICU limit per day (₹)" obj={draft} k="icu_limit_per_day" set={set} money />
           <TextField label="ICU clause" obj={draft} k="icu_clause" set={set} />
@@ -278,11 +337,12 @@ export function PolicyEditor({ value, onSave, text: raw }: Editor<PolicyDocument
           <TextField label="Co-payment applies…" obj={draft} k="copay_condition" set={set} />
           <TextField label="Co-payment clause" obj={draft} k="copay_clause" set={set} />
           <TextField label="Non-payable clause" obj={draft} k="non_payable_clause" set={set} />
+          <TextField label="Exclusions clause" obj={draft} k="exclusions_clause" set={set} />
         </Grid>
       </Group>
       <Group title="Rules">
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Field label="Proportionate deduction does not apply to">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <Field label="Proportionate deduction does not apply to" hint={<FieldNote m={fields?.proportionate_exclusions} />}>
             <div className="flex flex-wrap gap-x-5 gap-y-3 pt-2">
               {EXCLUDABLE.map((c) => (
                 <label key={c} className="flex items-center gap-2 text-[15px] font-normal text-ink-2">
@@ -301,12 +361,20 @@ export function PolicyEditor({ value, onSave, text: raw }: Editor<PolicyDocument
               ))}
             </div>
           </Field>
-          <Field label="Non-payable items (one per line)">
+          <Field label="Non-payable items (one per line)" hint={<FieldNote m={fields?.non_payable_items} />}>
             <textarea
               className={`${input} h-32 py-2.5 leading-relaxed`}
               value={draft.non_payable_items.join('\n')}
               onChange={(e) => set('non_payable_items', e.target.value.split('\n'))}
               onBlur={(e) => set('non_payable_items', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+            />
+          </Field>
+          <Field label="Exclusions (one per line)" hint={<FieldNote m={fields?.exclusions} />}>
+            <textarea
+              className={`${input} h-32 py-2.5 leading-relaxed`}
+              value={draft.exclusions.join('\n')}
+              onChange={(e) => set('exclusions', e.target.value.split('\n'))}
+              onBlur={(e) => set('exclusions', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
             />
           </Field>
           <Field label="Sub-limits (name: amount)">
@@ -339,6 +407,6 @@ export function PolicyEditor({ value, onSave, text: raw }: Editor<PolicyDocument
         </ul>
       </details>
       <SaveBar saving={saving} dirty={dirty} onSave={save} raw={raw} />
-    </div>
+    </FieldsContext.Provider>
   )
 }

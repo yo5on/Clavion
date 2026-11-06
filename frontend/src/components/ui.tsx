@@ -1,4 +1,4 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, CircleHelp, Download, Info, Loader2, PlugZap, X, XCircle } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, Download, Info, Loader2, X, XCircle } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { rupees, type FindingStatus, type Money, type Provenance, type ProviderState } from '../api'
 
@@ -155,10 +155,10 @@ export const STATUS: Record<FindingStatus, { label: string; fill: string; text: 
     meaning: 'The documents do not support all of this deduction.',
   },
   unverified: {
-    label: 'Unverified',
+    label: 'Needs clarification',
     fill: 'fill-unverified',
     text: 'text-caution',
-    meaning: 'Not enough information to check this deduction.',
+    meaning: 'The documents cannot settle this deduction; the insurer must explain it.',
   },
 }
 
@@ -190,7 +190,7 @@ export function LedgerBar({ approved, supported, contestable, unverified, classN
     ['Approved', approved, 'fill-approved'],
     ['Supported deductions', supported, 'fill-supported'],
     ['Potentially contestable', contestable, 'fill-contestable'],
-    ['Unverified', unverified, 'fill-unverified'],
+    ['Needs clarification', unverified, 'fill-unverified'],
   ]
   const total = parts.reduce((s, [, v]) => s + Math.max(v, 0), 0) || 1
   return (
@@ -229,11 +229,6 @@ export function ProvenanceBadges({ p }: { p: Provenance }) {
 
 export const PROVIDER_STATE: Record<ProviderState, [string, string, typeof CheckCircle2]> = {
   available: ['Available', 'text-ok', CheckCircle2],
-  connected: ['Connected', 'text-ok', PlugZap],
-  not_configured: ['Not configured', 'text-mute', CircleHelp],
-  subscription_required: ['Subscription required', 'text-caution', AlertTriangle],
-  connection_failed: ['Connection failed', 'text-alert', XCircle],
-  not_checked: ['Not checked yet', 'text-mute', CircleHelp],
 }
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {

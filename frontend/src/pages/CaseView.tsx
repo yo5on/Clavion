@@ -1,7 +1,7 @@
-import { ArrowRight, Check, ChevronLeft, FileText, Loader2, PenLine, RotateCcw, Scale, Upload } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronLeft, FileText, Loader2, PenLine, RotateCcw, Scale, Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api, DOC_LABELS, type CaseDetail, type DocType, type Provider } from '../api'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api, composeAppeal, DOC_LABELS, type AppealStatement, type CaseDetail, type DocType, type Provider, type StatementKind } from '../api'
 import AuditView from '../components/AuditView'
 import { BillEditor, PolicyEditor, SettlementEditor } from '../components/ReviewForms'
 import {
@@ -30,7 +30,9 @@ export default function CaseView() {
   const [c, setCase] = useState<CaseDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [auditing, setAuditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const toast = useToast()
+  const navigate = useNavigate()
 
   useEffect(() => {
     api.case(id).then(setCase).catch((e) => setError(e.message))
@@ -56,6 +58,17 @@ export default function CaseView() {
   const go = (t: Tab) => {
     setParams({ tab: t })
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function remove() {
+    try {
+      await api.deleteCase(id)
+      toast('success', 'Case deleted.')
+      navigate('/cases')
+    } catch (e) {
+      toast('error', (e as Error).message)
+      setConfirmDelete(false)
+    }
   }
 
   const back = (
@@ -135,10 +148,19 @@ export default function CaseView() {
           <span aria-hidden className="text-faint">·</span>
           <span>Opened {new Date(c.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
           {c.demo && <DemoTag />}
+          <span aria-hidden className="text-faint">·</span>
+          <button className="inline-flex items-center gap-1 rounded-sm text-[15px] text-mute transition-colors hover:text-alert" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="size-3.5" strokeWidth={1.75} /> Delete case
+          </button>
         </p>
         {!c.documents.settlement && <p className="mt-2 text-sm text-mute">Upload the settlement letter to run the audit.</p>}
         {c.demo && <div className="mt-8"><DemoBanner /></div>}
       </header>
+      <ConfirmDialog open={confirmDelete} title="Delete this case?" confirmLabel="Delete"
+        onConfirm={remove} onCancel={() => setConfirmDelete(false)}>
+        The extracted text, corrections, audit and appeal letter for “{c.title}” are permanently removed from this
+        computer. Your original files are not affected.
+      </ConfirmDialog>
 
       <div key={tab} className="animate-page-in">
         {tab === 'review' && (
@@ -165,12 +187,13 @@ export default function CaseView() {
                 </button>
               )}
             </section>
+            {c.trail && c.trail.length > 0 && <Trail events={c.trail} />}
           </div>
         )}
 
         {tab === 'audit' &&
           (c.audit ? (
-            <AuditView key={c.audit.generated_at} audit={c.audit} clauses={c.documents.policy?.data.clauses ?? []} caseId={c.id} onNext={() => go('appeal')} />
+            <AuditView key={c.audit.generated_at} audit={c.audit} documents={c.documents} caseId={c.id} onNext={() => go('appeal')} />
           ) : (
             <EmptyState icon={Scale} title="No current audit"
               actions={
@@ -183,7 +206,7 @@ export default function CaseView() {
             </EmptyState>
           ))}
 
-        {tab === 'appeal' && <AppealTab c={c} onSave={(text) => run(() => api.saveAppeal(id, text), 'Appeal letter saved.')} onAudit={() => go('audit')} />}
+        {tab === 'appeal' && <AppealTab key={c.audit?.generated_at} c={c} onSave={(body) => run(() => api.saveAppeal(id, body), 'Appeal letter saved.')} onAudit={() => go('audit')} />}
       </div>
     </div>
   )
@@ -263,9 +286,9 @@ function DocumentSection({ c, docType, run }: { c: CaseDetail; docType: DocType;
                 {doc.provenance.warnings.map((w) => <li key={w}>{w}</li>)}
               </ul>
             )}
-            {docType === 'bill' && c.documents.bill && <BillEditor key={editorKey} value={c.documents.bill.data} text={doc.text} onSave={save} />}
-            {docType === 'policy' && c.documents.policy && <PolicyEditor key={editorKey} value={c.documents.policy.data} text={doc.text} onSave={save} />}
-            {docType === 'settlement' && c.documents.settlement && <SettlementEditor key={editorKey} value={c.documents.settlement.data} text={doc.text} onSave={save} />}
+            {docType === 'bill' && c.documents.bill && <BillEditor key={editorKey} value={c.documents.bill.data} text={doc.text} fields={doc.fields} onSave={save} />}
+            {docType === 'policy' && c.documents.policy && <PolicyEditor key={editorKey} value={c.documents.policy.data} text={doc.text} fields={doc.fields} onSave={save} />}
+            {docType === 'settlement' && c.documents.settlement && <SettlementEditor key={editorKey} value={c.documents.settlement.data} text={doc.text} fields={doc.fields} onSave={save} />}
           </>
         )}
       </div>
@@ -278,8 +301,20 @@ function DocumentSection({ c, docType, run }: { c: CaseDetail; docType: DocType;
   )
 }
 
-function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: string) => Promise<boolean>; onAudit: () => void }) {
-  const [text, setText] = useState(c.appeal?.text ?? '')
+const KIND: Record<StatementKind, [string, string, string]> = {
+  source_fact: ['From your documents', 'text-ok', 'Taken from an uploaded document. Check it against your copy.'],
+  calculation: ['Clavion calculation', 'text-accent', 'Recalculated by Clavion from the bill and the policy.'],
+  suggestion: ['Suggested wording', 'text-caution', 'Generated argument or request. Review it and make it your own.'],
+  standard: ['Letter formality', 'text-mute', 'Address, subject, salutation or closing.'],
+}
+
+type AppealBody = { text: string } | { statements: AppealStatement[] }
+
+function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (body: AppealBody) => Promise<boolean>; onAudit: () => void }) {
+  const initial = c.appeal?.statements ?? []
+  const [items, setItems] = useState<AppealStatement[]>(initial)
+  const [freeText, setFreeText] = useState(c.appeal?.text ?? '')
+  const [view, setView] = useState<'edit' | 'preview'>('edit')
   const [saving, setSaving] = useState(false)
   if (!c.appeal || !c.audit)
     return (
@@ -287,38 +322,91 @@ function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: strin
         The letter is drafted from the audit findings. Run the audit first.
       </EmptyState>
     )
-  const dirty = text !== c.appeal.text
+  const byStatement = initial.length > 0
+  const text = byStatement ? composeAppeal(items) : freeText
+  const dirty = byStatement ? JSON.stringify(items) !== JSON.stringify(initial) : freeText !== c.appeal.text
   const words = text.trim() ? text.trim().split(/\s+/).length : 0
+  const left = items.filter((s) => !s.include).length
   const save = async () => {
     setSaving(true)
-    await onSave(text)
+    await onSave(byStatement ? { statements: items } : { text: freeText })
     setSaving(false)
+  }
+  const update = (i: number, patch: Partial<AppealStatement>) =>
+    setItems((xs) => xs.map((s, j) => (j === i ? { ...s, ...patch, edited: s.edited || patch.text !== undefined } : s)))
+  const onKey = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault()
+      if (dirty && !saving) save()
+    }
   }
 
   return (
-    <div className="grid items-start gap-12 lg:grid-cols-12 lg:gap-14">
+    <div className="grid items-start gap-12 lg:grid-cols-12 lg:gap-14" onKeyDown={onKey}>
       <div className="lg:col-span-8">
         <div className="rounded-[32px] bg-tile p-2 sm:p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 pt-3 pb-4 sm:px-5">
-            <h2 className="text-[15px] font-semibold text-ink">Appeal letter</h2>
-            <span className="text-[13px] text-mute">{c.appeal.source}{c.appeal.edited ? ' · edited by you' : ''}</span>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pt-3 pb-4 sm:px-5">
+            <div>
+              <h2 className="text-[15px] font-semibold text-ink">Appeal letter</h2>
+              <p className="text-[13px] text-mute">{c.appeal.source}{c.appeal.edited ? ' · edited by you' : ''}</p>
+            </div>
+            {byStatement && (
+              <div role="tablist" aria-label="Appeal view" className="flex rounded-full bg-paper p-1 shadow-[0_1px_3px_rgb(0_0_0/0.06)]">
+                {(['edit', 'preview'] as const).map((v) => (
+                  <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                    className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${view === v ? 'bg-ink text-white' : 'text-ink-2 hover:text-ink'}`}>
+                    {v === 'edit' ? 'Review statements' : 'Preview letter'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <textarea
-            aria-label="Appeal letter text"
-            className="block min-h-[40rem] w-full resize-y rounded-[22px] border-0 bg-paper px-6 py-8 text-[16px] leading-[1.75] text-ink shadow-[0_1px_3px_rgb(0_0_0/0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fill sm:px-14 sm:py-14"
-            value={text}
-            spellCheck
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault()
-                if (dirty && !saving) save()
-              }
-            }}
-          />
+
+          {byStatement && view === 'edit' ? (
+            <ol className="space-y-2">
+              {items.map((st, i) => {
+                const [label, cls, hint] = KIND[st.kind]
+                const newSection = i === 0 || items[i - 1].section !== st.section
+                return (
+                  <li key={st.id}>
+                    {newSection && <p className="px-4 pt-4 pb-2 text-[13px] font-semibold text-ink sm:px-5">{st.section}</p>}
+                    <div className={`rounded-[22px] bg-paper px-5 py-4 shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-opacity sm:px-6 ${st.include ? '' : 'opacity-50'}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={`text-[13px] font-medium ${cls}`} title={hint}>
+                          {label}{st.edited && <span className="font-normal text-mute"> · edited</span>}
+                        </span>
+                        <label className="flex items-center gap-2 text-[13px] text-ink-2">
+                          <input type="checkbox" className="size-4 accent-ink" checked={st.include} onChange={(e) => update(i, { include: e.target.checked })} />
+                          Include
+                        </label>
+                      </div>
+                      <textarea aria-label={`${label}: ${st.section}`} value={st.text} spellCheck
+                        rows={Math.min(Math.max(2, Math.ceil(st.text.length / 90) + st.text.split('\n').length - 1), 14)}
+                        onChange={(e) => update(i, { text: e.target.value })}
+                        className="mt-2 block w-full resize-y rounded-lg border border-transparent bg-transparent px-1 py-1 text-[15px] leading-relaxed text-ink transition-colors hover:border-hairline-strong focus:border-accent-fill focus:outline-none focus:ring-1 focus:ring-accent-fill" />
+                      {st.refs.length > 0 && (
+                        <p className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-mute">
+                          {st.refs.map((r) => <span key={r} className="inline-flex items-center gap-1"><FileText aria-hidden className="size-3" strokeWidth={1.75} />{r}</span>)}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          ) : byStatement ? (
+            <pre className="min-h-[30rem] whitespace-pre-wrap rounded-[22px] bg-paper px-6 py-8 font-sans text-[16px] leading-[1.75] text-ink shadow-[0_1px_3px_rgb(0_0_0/0.06)] sm:px-14 sm:py-14">{text}</pre>
+          ) : (
+            <textarea
+              aria-label="Appeal letter text"
+              className="block min-h-[40rem] w-full resize-y rounded-[22px] border-0 bg-paper px-6 py-8 text-[16px] leading-[1.75] text-ink shadow-[0_1px_3px_rgb(0_0_0/0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-fill sm:px-14 sm:py-14"
+              value={freeText} spellCheck onChange={(e) => setFreeText(e.target.value)} />
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 px-3 pt-4 pb-2 sm:px-4">
-            <span className="flex items-center gap-4 text-[13px] text-mute">
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-mute">
               <span className="tabular-nums">{words} words</span>
+              {byStatement && left > 0 && <span className="tabular-nums">{left} statement{left === 1 ? '' : 's'} left out</span>}
               {dirty && (
                 <span className="flex animate-fade-in items-center gap-2 font-medium text-caution">
                   <span aria-hidden className="size-1.5 rounded-full bg-caution-fill" /> Unsaved changes
@@ -327,7 +415,7 @@ function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: strin
             </span>
             <span className="flex items-center gap-3">
               {dirty && (
-                <button className={btn.secondarySm} onClick={() => setText(c.appeal!.text)} disabled={saving}>
+                <button className={btn.secondarySm} onClick={() => { setItems(initial); setFreeText(c.appeal!.text) }} disabled={saving}>
                   <RotateCcw className="size-3.5" /> Revert
                 </button>
               )}
@@ -340,17 +428,30 @@ function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: strin
       </div>
 
       <aside className="space-y-12 lg:sticky lg:top-36 lg:col-span-4">
+        {byStatement && (
+          <section>
+            <h2 className="type-heading">What each statement rests on</h2>
+            <ul className="mt-4 space-y-3 text-[15px]">
+              {(Object.keys(KIND) as StatementKind[]).map((k) => (
+                <li key={k}>
+                  <span className={`font-medium ${KIND[k][1]}`}>{KIND[k][0]}</span>
+                  <span className="mt-0.5 block text-sm text-mute">{KIND[k][2]}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <section>
           <h2 className="type-heading">Export</h2>
           <ul className="mt-4 divide-y divide-hairline border-y border-hairline">
             <li className="py-5">
               <p className="text-[15px] font-medium text-ink">Audit report</p>
-              <p className="mt-1 text-sm leading-relaxed text-mute">Reconciliation, every finding and its evidence.</p>
+              <p className="mt-1 text-sm leading-relaxed text-mute">Reconciliation, every finding, its evidence and the consistency checks.</p>
               <PdfButton href={api.exportUrl(c.id, 'report')} className={`${btn.secondarySm} mt-4`}>Download PDF</PdfButton>
             </li>
             <li className="py-5">
               <p className="text-[15px] font-medium text-ink">Appeal letter</p>
-              <p className="mt-1 text-sm leading-relaxed text-mute">The saved version of the letter.</p>
+              <p className="mt-1 text-sm leading-relaxed text-mute">The saved version of the letter, with the statements you included.</p>
               <PdfButton href={api.exportUrl(c.id, 'appeal')} disabled={dirty} className={`${btn.primarySm} mt-4`}
                 title={dirty ? 'Save your changes first' : undefined}>
                 Download PDF
@@ -362,7 +463,7 @@ function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: strin
         <section>
           <h2 className="type-heading">Before you send</h2>
           <ul className="mt-4 space-y-3 text-[15px] text-ink-2">
-            {['Check every figure against your own documents.', 'Add your contact details, signature and date.', 'Attach the bill, policy and settlement letter.'].map((t) => (
+            {['Check every figure against your own documents.', 'Replace any [bracketed] placeholders.', 'Add your contact details, signature and date.', 'Attach the bill, policy and settlement letter.'].map((t) => (
               <li key={t} className="flex gap-3"><Check aria-hidden className="mt-1 size-4 shrink-0 text-faint" strokeWidth={2} /> {t}</li>
             ))}
           </ul>
@@ -370,5 +471,25 @@ function AppealTab({ c, onSave, onAudit }: { c: CaseDetail; onSave: (text: strin
         </section>
       </aside>
     </div>
+  )
+}
+
+function Trail({ events }: { events: NonNullable<CaseDetail['trail']> }) {
+  return (
+    <details className="group border-y border-hairline">
+      <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium text-ink">
+        Case activity <span className="ml-2 font-normal text-mute">{events.length} event{events.length === 1 ? '' : 's'}</span>
+        <ChevronDown aria-hidden className="ml-auto size-4 text-mute transition-transform duration-300 group-open:rotate-180" />
+      </summary>
+      <ol className="divide-y divide-hairline border-t border-hairline">
+        {[...events].reverse().map((e, i) => (
+          <li key={i} className="grid gap-1 py-3 text-sm sm:grid-cols-[11rem_9rem_1fr] sm:gap-4">
+            <time className="tabular-nums text-mute" dateTime={e.at}>{new Date(e.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+            <span className="text-ink-2">{e.event.replace(/_/g, ' ')}</span>
+            <span className="break-words text-ink-2">{e.detail}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
   )
 }

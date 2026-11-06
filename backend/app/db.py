@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, String, create_engine, text
+from sqlalchemy import JSON, DateTime, String, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -10,6 +10,12 @@ from .core.config import settings
 engine = create_engine(settings.database_url, connect_args={"check_same_thread": False},
                        **({"poolclass": StaticPool} if ":memory:" in settings.database_url else {}))
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
+
+
+@event.listens_for(engine, "connect")
+def _secure_delete(conn, _):
+    # Deleted cases hold medical and financial details: overwrite freed pages instead of leaving them on disk.
+    conn.execute("PRAGMA secure_delete = ON")
 
 
 class Base(DeclarativeBase):
