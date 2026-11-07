@@ -27,7 +27,9 @@ from ..schemas.claim import (FieldMeta, PolicyClause, PolicyDocument, Settlement
 # ambiguous (years, codes, pin codes).
 MONEY = r"(?:\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+\.\d{1,2})"
 RS = r"(?:Rs\.?|INR|₹)"
-RS_AMOUNT = rf"{RS}\s*({MONEY}|\d+)"
+# Indian documents often write large amounts as "Rs 5 lakh" or "Rs 1.5 crore"; money() applies the multiplier.
+UNIT = r"(?:\s*(?:lakhs?|lacs?|crores?)\b)?"
+RS_AMOUNT = rf"{RS}\s*((?:{MONEY}|\d+){UNIT})"
 DATE = r"\d{1,2}[-/. ](?:[A-Za-z]{3,9}|\d{1,2})[-/. ]\d{2,4}"
 SYNTHETIC_MARKER = "SYNTHETIC TEST DOCUMENT"
 PAGE_BREAK = "\f"
@@ -62,8 +64,14 @@ EXCLUSION_WORDS = {"pharmacy": "pharmacy", "medicine": "pharmacy", "drug": "phar
                    "investigation": "diagnostics", "icu": "icu"}
 
 
+UNIT_MULTIPLIER = {"lakh": 100_000, "lac": 100_000, "crore": 10_000_000}
+
+
 def money(s: str) -> Decimal:
-    return Decimal(s.replace(",", ""))
+    m = re.fullmatch(r"([\d,.]+)\s*([a-z]*?)s?", s.strip(), re.I)
+    if not m:
+        return Decimal(s.replace(",", ""))
+    return Decimal(m.group(1).replace(",", "")) * UNIT_MULTIPLIER.get(m.group(2).lower(), 1)
 
 
 def categorize(description: str) -> str:
@@ -161,7 +169,7 @@ class _Rec:
         return m.group(1).strip()
 
     def amount_after(self, path: str, label: str) -> Decimal | None:
-        v = self.search(path, rf"{label}\s*(?:\({RS}\))?\s*[:\-]?\s*{RS}?\s*({MONEY}|\d+)")
+        v = self.search(path, rf"{label}\s*(?:\({RS}\))?\s*[:\-]?\s*{RS}?\s*((?:{MONEY}|\d+){UNIT})")
         return money(v) if v else None
 
     def first_line(self, path: str, lines: list[Line], pred, note: str) -> str | None:
@@ -492,12 +500,15 @@ def extract_policy(text: str) -> Extraction:
             from_clause("exclusions", excl, "inferred", "split from running text at commas")
         from_clause("exclusions_clause", excl)
 
-    copay_pct = (re.search(r"co-?\s*payment\s+of\s+(\d+(?:\.\d+)?)\s*%", copay.text, re.I)
+    copay_pct = (re.search(r"co-?\s*pay(?:ment)?\s*(?:of|:|at)?\s*(\d+(?:\.\d+)?)\s*%", copay.text, re.I)
                  or re.search(r"(\d+(?:\.\d+)?)\s*%\s*co-?\s*pay", copay.text, re.I)) if copay else None
     copay_cond = None
     if copay_pct:
         from_clause("copay_percent", copay)
-        if m := re.search(r"((?:where|if|for|in\s+case)\s[^.]+)", " ".join(copay.text.split("\n")[1:]), re.I):
+        cond_re = r"((?:where|if|for|in\s+case)\s[^.]+)"
+        # the heading line is skipped (its title may say "for ..."), except after the % on a one-line clause
+        if m := (re.search(cond_re, " ".join(copay.text.split("\n")[1:]), re.I)
+                 or re.search(cond_re, copay.text[copay_pct.end():].split("\n")[0], re.I)):
             copay_cond = m.group(1).strip()
             from_clause("copay_condition", copay)
     for path, c in (("room_rent_clause", room), ("icu_clause", icu),
