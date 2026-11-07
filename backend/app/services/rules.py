@@ -27,7 +27,7 @@ from .policy_analysis import token_overlap, tokens
 REASON_WORDS = {"non", "payable", "nonpayable", "excluded", "exclusion", "inadmissible", "deduction", "deducted",
                 "disallowed", "admissible", "medical", "being", "treated"}
 
-RULES_VERSION = "2026.11-1"
+RULES_VERSION = "2026.11-2"
 ZERO = Decimal("0.00")
 # Differences up to this much between the insurer's figure and the recalculation are treated as rounding, not as a
 # contestable amount: insurers round ratios and intermediate figures differently.
@@ -58,6 +58,7 @@ class Ctx:
         self.sources, self.filenames = sources or {}, filenames or {}
         self.missing: list[str] = []  # report-wide
         self.requests: list[str] = []  # documents or clarifications to ask for, report-wide
+        self.assessed: dict = {}  # deduction number -> Finding, filled as deductions are assessed
         self.reset()
 
     def reset(self):
@@ -401,6 +402,13 @@ def _sublimit(ctx: Ctx, d: SettlementDeduction) -> Outcome:
 
 # ---------------------------------------------------------------- R-COPAY-01
 
+# Wording in the co-pay clause that names the amount the percentage is applied to. Read from the clause, never
+# assumed: if neither (or both) appear, the base is ambiguous and the finding asks for clarification.
+COPAY_BASE_AFTER = re.compile(r"\badmissible\b|\bpayable\s+amount\b|\bassessed\s+amount\b"
+                              r"|\bafter\s+(?:all\s+)?(?:other\s+)?deductions?\b", re.I)
+COPAY_BASE_GROSS = re.compile(r"\b(?:total|gross|full|entire)\s+(?:claim(?:ed)?|bill(?:ed)?)(?:\s+amount)?\b"
+                              r"|\bbilled\s+amount\b|\bbefore\s+(?:any\s+)?(?:other\s+)?deductions?\b", re.I)
+
 def _copay(ctx: Ctx, d: SettlementDeduction) -> Outcome:
     p = ctx.policy
     if not p:
@@ -415,30 +423,91 @@ def _copay(ctx: Ctx, d: SettlementDeduction) -> Outcome:
         ctx.lack("Claimed amount missing, so the co-payment cannot be recalculated", "The claimed amount")
         return Outcome(None, "Claimed amount missing, so the co-payment cannot be recalculated.",
                        evidence=ctx.clause_ev(clause), clause=clause)
-    from .audit import classify_deduction  # deferred: audit imports this module
+    c = p.clause(clause)
+    text = " ".join(c.text.split()) if c else ""
+    after, gross = COPAY_BASE_AFTER.search(text), COPAY_BASE_GROSS.search(text)
+    on_claim = calc.copay_amount(claimed, pct)
+    steps = [f"Claimed amount (settlement letter) = {rs(claimed)}"]
 
-    others = [x.amount for x in ctx.settlement.deductions if classify_deduction(x.description) != "copay"]
-    admissible = calc.q(claimed - sum(others, ZERO))
-    supported = calc.copay_amount(admissible, pct)
-    steps = [f"Admissible amount = claimed {rs(claimed)} - other deductions {rs(sum(others, ZERO))} = "
-             f"{rs(admissible)}", f"Co-pay = {pct}% x {rs(admissible)} = {rs(supported)}"]
-    why = f"Clause {clause} sets a {pct}% co-payment, applied to the admissible amount (the claim after the other " \
-          f"deductions)."
-    reason = None
-    if d.amount > supported + ROUNDING_TOLERANCE:
-        on_claim = calc.copay_amount(claimed, pct)
-        reason = f"{pct}% of the full claimed amount {rs(claimed)} is {rs(on_claim)}" + (
-            ", which is what the insurer deducted: the co-payment appears to have been applied before the other "
-            "deductions instead of to the admissible amount." if abs(on_claim - d.amount) <= ROUNDING_TOLERANCE
-            else f"; on the admissible amount it is {rs(supported)}.")
+    # Other deductions: the insurer's figure and CLAVION's recalculation, kept apart. Only amounts CLAVION has
+    # established leave the base; an insurer figure CLAVION could not check is never used to shrink it.
+    removed, open_ = ZERO, []
+    for n, f in sorted(ctx.assessed.items()):
+        if f.rule_id == "R-COPAY-01":
+            continue
+        if f.supported_amount is None:
+            open_.append(n)
+            steps.append(f"Deduction {n} ({f.category}): insurer {rs(f.insurer_amount)}; CLAVION could not establish "
+                         f"it, so it is not removed from the base")
+        else:
+            # The lower figure: never contest a co-pay because the insurer under-deducted elsewhere.
+            take = min(f.insurer_amount, f.supported_amount)
+            removed += take
+            steps.append(f"Deduction {n} ({f.category}): insurer {rs(f.insurer_amount)}; CLAVION {rs(f.supported_amount)}"
+                         f"; removed from the base: {rs(take)}")
+    eligible = max(calc.q(claimed - removed), ZERO)
+    on_eligible = calc.copay_amount(eligible, pct)
+    ev = ctx.clause_ev(clause)
+
+    supported, bound, reason = None, None, None
+    if gross and not after:
+        ctx.cond(f"Clause {clause} states the co-payment base ('{gross.group(0)}')", True)
+        steps.append(f"Clause {clause} applies the co-payment to the '{gross.group(0)}': base = claimed {rs(claimed)}")
+        steps.append(f"Co-pay = {pct}% x {rs(claimed)} = {rs(on_claim)}")
+        supported = on_claim
+        why = f"Clause {clause} sets a {pct}% co-payment on the {gross.group(0)}, before other deductions."
+    elif after and not gross:
+        ctx.cond(f"Clause {clause} states the co-payment base ('{after.group(0)}')", True)
+        steps.append(f"Clause {clause} applies the co-payment to the '{after.group(0)}' amount: base = claimed "
+                     f"{rs(claimed)} - deductions established above {rs(removed)} = {rs(eligible)}")
+        steps.append(f"Co-pay = {pct}% x {rs(eligible)} = {rs(on_eligible)}")
+        why = f"Clause {clause} sets a {pct}% co-payment on the {after.group(0)} amount, i.e. after the other " \
+              f"deductions the policy supports."
+        if ctx.cond("Every other deduction is established", not open_):
+            supported = on_eligible
+            if d.amount > supported + ROUNDING_TOLERANCE:
+                reason = f"{pct}% of the full claimed amount {rs(claimed)} is {rs(on_claim)}" + (
+                    ", which is what the insurer deducted: the co-payment appears to have been applied before the "
+                    "other deductions instead of to the admissible amount."
+                    if abs(on_claim - d.amount) <= ROUNDING_TOLERANCE
+                    else f"; on the admissible amount it is {rs(supported)}.")
+        else:
+            bound = on_eligible
+            ctx.lack(f"Co-pay base depends on deduction(s) {', '.join(map(str, open_))}, which could not be established")
+            why += f" Deduction(s) {', '.join(map(str, open_))} could not be established, so the base is not known; " \
+                   f"the co-payment is at most {rs(bound)}."
+    else:
+        ctx.cond("Policy wording states which amount the co-payment is applied to", None)
+        ctx.basis = "insufficient"
+        ctx.lack(f"Clause {clause} does not clearly state which amount the co-payment is applied to",
+                 f"Clarification of the amount Clause {clause}'s co-payment is applied to (the claimed amount, or the "
+                 f"amount admissible after other deductions)")
+        steps.append(f"Clause {clause} wording is ambiguous about the base: " + (
+            f"it mentions both '{after.group(0)}' and '{gross.group(0)}'" if after else "it names no base amount"))
+        steps.append(f"If on the claimed amount: {pct}% x {rs(claimed)} = {rs(on_claim)}; if after the other "
+                     f"deductions: {pct}% x {rs(eligible)} = {rs(on_eligible)}")
+        bound = max(on_claim, on_eligible)
+        why = f"Clause {clause} sets a {pct}% co-payment but does not clearly say which amount it is applied to. " \
+              f"This needs clarification from the insurer; CLAVION does not choose a base. On any reading the " \
+              f"co-payment is at most {rs(bound)}."
+    steps.append(f"Insurer's co-pay (settlement letter) = {rs(d.amount)}")
+
     if p.copay_condition:
         ctx.cond(f"Co-payment condition met ({p.copay_condition})", None)
         ctx.lack(f"Co-payment condition must be checked: applies {p.copay_condition}",
                  f"Proof that the co-payment condition applies ({p.copay_condition})")
+        top = supported if supported is not None else bound
         return Outcome(None, why + f" It applies only {p.copay_condition}; the documents do not show whether this "
-                                   f"condition is met. If met, up to {rs(supported)} is deductible.", steps,
-                       ctx.clause_ev(clause), clause)
-    return Outcome(supported, why, steps, ctx.clause_ev(clause), clause, reason)
+                                   f"condition is met. If met, up to {rs(top)} is deductible.", steps, ev, clause)
+    if supported is None:
+        if d.amount > bound + ROUNDING_TOLERANCE:  # above the largest possible figure: the excess is certain
+            ctx.basis = None
+            steps.append(f"Insurer's {rs(d.amount)} exceeds the largest possible co-pay {rs(bound)}")
+            return Outcome(bound, why, steps, ev, clause,
+                           f"Even on the largest possible base the co-payment is {rs(bound)}; the insurer deducted "
+                           f"{rs(d.amount)}.")
+        return Outcome(None, why, steps, ev, clause)
+    return Outcome(supported, why, steps, ev, clause, reason)
 
 
 # ---------------------------------------------------------------- R-UNSPEC-01
@@ -466,7 +535,8 @@ RULES: list[Rule] = [
          "Sum over room-rent lines of max(rate - limit, 0) x days", lambda c, d: _daily_limit(c, d, "room_rent")),
     Rule("R-COPAY-01", "Co-payment", "copay", r"co-?\s*pay",
          ("policy.copay_percent", "settlement.claimed_amount"),
-         "Co-pay % x (claimed - other deductions), if the policy's condition (if any) is met", _copay),
+         "Co-pay % x the base the policy wording names (claimed amount, or claimed - other deductions CLAVION "
+         "established), if the policy's condition (if any) is met; ambiguous wording is not resolved", _copay),
     Rule("R-SUBLIMIT-01", "Sub-limit", "sublimit", r"sub-?\s*limit|\bcapped\b",
          ("policy.sub_limits", "bill lines for the treatment"), "max(billed for the treatment - sub-limit, 0)",
          _sublimit),

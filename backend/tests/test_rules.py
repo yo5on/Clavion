@@ -24,7 +24,7 @@ def letter(*deds, claimed=None, approved=None, **kw):
 CLAUSES = [PolicyClause(id="3.1", title="Room Rent", text="3.1 Room Rent\nRoom rent up to Rs 5,000 per day."),
            PolicyClause(id="3.2", title="ICU", text="3.2 ICU\nICU up to Rs 10,000 per day."),
            PolicyClause(id="3.3", title="Proportionate Deduction", text="3.3 Proportionate Deduction\n..."),
-           PolicyClause(id="5.1", title="Co-payment", text="5.1 Co-payment\nA 10% co-payment applies."),
+           PolicyClause(id="5.1", title="Co-payment", text="5.1 Co-payment\nA 10% co-payment applies to every admissible claim."),
            PolicyClause(id="6.1", title="Non-payable Items", text="6.1 Non-payable Items\n- Gloves\n- Masks"),
            PolicyClause(id="8.1", title="Exclusions", text="8.1 Exclusions\n- Dental treatment")]
 POLICY = PolicyDocument(policy_number="P/1", sum_insured="500000", room_rent_limit_per_day="5000",
@@ -159,8 +159,9 @@ def test_rounding_tolerance(insurer, status, cont):
 # ------------------------------------------------------------------ R-COPAY-01
 
 def test_copay_applied_to_gross_claim_is_identified():
+    # Masks line 10,000 is on the non-payable list, so CLAVION establishes that deduction.
     # admissible = 50,000 - 10,000 = 40,000; 10% = 4,000. Insurer took 10% of 50,000 = 5,000 -> 1,000 contestable
-    bill = HospitalBill(line_items=[item("Surgeon fee", 1, "50000.00")])
+    bill = HospitalBill(line_items=[item("Surgeon fee", 1, "40000.00"), item("Masks", 1, "10000.00")])
     r = run_audit(bill, POLICY, letter(("Non-payable items - Masks", "10000.00", None), ("Co-payment 10%", "5000.00", None),
                                        claimed="50000.00", approved="35000.00"))
     f = r.findings[1]
