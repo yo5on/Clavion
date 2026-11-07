@@ -1,23 +1,17 @@
-"""End-to-end API workflow on SYNTHETIC documents, plus provider status and labelling."""
+"""End-to-end API workflow on SYNTHETIC documents, plus provider labelling."""
 
 import io
-import json
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from pypdf import PdfReader
 
-from app.core.config import settings
 from app.demo import fixtures
 from app.main import app
-from app.services import bharatcode_client as bc
-from app.services import providers
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(providers, "STATUS_FILE", tmp_path / "status.json")
+def client():
     with TestClient(app) as c:
         yield c
 
@@ -109,46 +103,23 @@ def test_demo_provider_is_labelled_and_limited_to_fixtures(client):
     assert other.status_code == 409
 
 
-def test_bharatcode_not_configured_and_refused(client):
-    status = {p["id"]: p for p in client.get("/api/providers").json()}
-    assert status["bharatcode"]["status"]["state"] == "not_configured" and status["bharatcode"]["ai"] is True
-    assert status["local"]["ai"] is False
-    case = client.post("/api/cases", json={"title": "x"}).json()
-    assert _upload(client, case["id"], "bill", provider="bharatcode").status_code == 409
-
-
-def test_bharatcode_check_reports_subscription_required_and_is_rate_limited(client, monkeypatch):
-    calls = []
-
-    def ping(self):
-        calls.append(1)
-        raise bc.BharatCodeError("access_denied", "HTTP 402", 402, code="subscription_required")
-
-    monkeypatch.setattr(settings, "bharatcode_api_key", SecretStr("sk-test"))
-    monkeypatch.setattr(bc.BharatCodeClient, "ping", ping)
-    first = client.post("/api/providers/bharatcode/check").json()
-    second = client.post("/api/providers/bharatcode/check").json()
-    assert first["status"]["state"] == second["status"]["state"] == "subscription_required"
-    assert len(calls) == 1  # the blocked endpoint is not hit again within the interval
-    assert "sk-test" not in providers.STATUS_FILE.read_text()
-    case = client.post("/api/cases", json={"title": "x"}).json()
-    assert _upload(client, case["id"], "bill", provider="bharatcode").status_code == 409
-
-
-@pytest.mark.parametrize("state,err", [("connection_failed", bc.BharatCodeError("connection", "down")),
-                                       ("connected", None)])
-def test_bharatcode_check_states(client, monkeypatch, state, err):
-    def ping(self):
-        if err:
-            raise err
-        return "OK"
-
-    monkeypatch.setattr(settings, "bharatcode_api_key", SecretStr("sk-test"))
-    monkeypatch.setattr(bc.BharatCodeClient, "ping", ping)
-    assert client.post("/api/providers/bharatcode/check").json()["status"]["state"] == state
-    assert json.loads(providers.STATUS_FILE.read_text())["state"] == state
-
-
 def test_demo_documents_download(client):
     r = client.get("/api/demo/documents/policy")
     assert r.status_code == 200 and "SYNTHETIC TEST DOCUMENT" in _pdf_text(r.content)
+
+
+def test_negative_or_out_of_range_corrections_are_rejected(client):
+    case = client.post("/api/demo/case").json()
+    letter = {**case["documents"]["settlement"]["data"], "approved_amount": "-1.00"}
+    assert client.put(f"/api/cases/{case['id']}/documents/settlement", json=letter).status_code == 422
+    policy = {**case["documents"]["policy"]["data"], "copay_percent": "120"}
+    assert client.put(f"/api/cases/{case['id']}/documents/policy", json=policy).status_code == 422
+
+
+def test_poor_scan_of_synthetic_document_is_still_labelled_demo(client):
+    from .test_synthetic_cases import CASES, degraded_scan
+
+    case = client.post("/api/cases", json={"title": "scan"}).json()
+    r = client.post(f"/api/cases/{case['id']}/documents/bill", data={"provider": "local"},
+                    files={"file": ("scan.png", degraded_scan(CASES["6_incomplete_poor_quality"]["bill"]))})
+    assert r.status_code == 200 and r.json()["documents"]["bill"]["provenance"]["demo"] is True

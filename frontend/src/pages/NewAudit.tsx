@@ -13,7 +13,7 @@ const DOCS: [DocType, string][] = [
 const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.txt'
 
 export function providerUsable(p: Provider) {
-  return p.status.state === 'available' || p.status.state === 'connected'
+  return p.status.state === 'available'
 }
 
 export function ProviderSelect({ value, onChange, className = input }: {

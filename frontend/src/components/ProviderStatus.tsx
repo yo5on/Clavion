@@ -1,7 +1,6 @@
-import { RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, type Provider } from '../api'
-import { ErrorNote, PROVIDER_STATE, Skeleton, btn } from './ui'
+import { ErrorNote, PROVIDER_STATE, Skeleton } from './ui'
 
 export function useProviders() {
   const [providers, setProviders] = useState<Provider[] | null>(null)
@@ -13,28 +12,12 @@ export function useProviders() {
 }
 
 export default function ProviderStatus() {
-  const { providers, setProviders, error } = useProviders()
-  const [checking, setChecking] = useState(false)
-  const [checkError, setCheckError] = useState<string | null>(null)
-
-  async function check() {
-    setChecking(true)
-    setCheckError(null)
-    try {
-      const bc = await api.checkBharatCode()
-      setProviders((ps) => ps && ps.map((p) => (p.id === bc.id ? bc : p)))
-    } catch (e) {
-      setCheckError((e as Error).message)
-    } finally {
-      setChecking(false)
-    }
-  }
-
+  const { providers, error } = useProviders()
   return (
     <div>
       <h3 className="type-heading">Analysis providers</h3>
       <div className="mt-4 space-y-3 empty:hidden">
-        <ErrorNote error={error ?? checkError} />
+        <ErrorNote error={error} />
         {!providers && !error && [0, 1].map((i) => <Skeleton key={i} className="h-12" />)}
       </div>
       <ul className="mt-2 divide-y divide-hairline">
@@ -48,24 +31,13 @@ export default function ProviderStatus() {
                   <Icon className="size-3.5 translate-y-px" strokeWidth={2} /> {label}
                 </span>
               </div>
-              {(p.status.detail || p.status.checked_at) && (
-                <p className="mt-1 text-sm leading-relaxed text-mute">
-                  {p.status.detail}
-                  {p.status.checked_at && ` Last checked ${new Date(p.status.checked_at).toLocaleString()}.`}
-                </p>
-              )}
-              {p.id === 'bharatcode' && p.status.state !== 'not_configured' && (
-                <button className={`${btn.linkSm} mt-2`} onClick={check} disabled={checking}>
-                  <RefreshCw className={`size-3.5 ${checking ? 'animate-spin' : ''}`} /> {checking ? 'Checking…' : 'Check connection'}
-                </button>
-              )}
+              {p.status.detail && <p className="mt-1 text-sm leading-relaxed text-mute">{p.status.detail}</p>}
             </li>
           )
         })}
       </ul>
       <p className="mt-2 text-[13px] leading-relaxed text-mute">
-        All audits currently run on local deterministic rules. No result is presented as BharatCode inference unless
-        a live BharatCode call actually produced it.
+        Extraction and auditing are rule-based and run locally. No language model is used.
       </p>
     </div>
   )

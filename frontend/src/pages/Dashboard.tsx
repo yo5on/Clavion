@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type CaseDetail, type CaseSummary, type Health, type LLMHealth } from '../api'
+import { api, type CaseDetail, type CaseSummary, type Health } from '../api'
 import { SettlementSummary } from '../components/AuditView'
 import ProviderStatus from '../components/ProviderStatus'
 import { Amount, Chevron, DemoTag, ErrorNote, Section, Skeleton, btn, caption } from '../components/ui'
@@ -152,19 +152,16 @@ export default function Dashboard() {
 
 function SystemStatus() {
   const [health, setHealth] = useState<Health | null>(null)
-  const [llm, setLlm] = useState<LLMHealth | null>(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => setError(true))
-    api.llmHealth().then(setLlm).catch(() => setError(true))
   }, [])
 
   const rows: [string, boolean | null, string?][] = [
     ['API server', error ? false : health ? true : null],
     ['Database', health ? health.database : error ? false : null],
-    ['BharatCode catalog reachable', llm ? llm.reachable : error ? false : null, llm?.model],
-    ['API key configured', health ? health.llm_configured : error ? false : null],
+    ['Offline OCR engine', health ? health.ocr_available : error ? false : null, 'RapidOCR'],
   ]
 
   return (
@@ -183,7 +180,8 @@ function SystemStatus() {
         ))}
       </ul>
       <p className={`${caption} mt-2 font-normal leading-relaxed`}>
-        Catalog reachability is not inference: only a successful live check marks BharatCode as connected.
+        Everything runs on this machine. Documents are read with PDF text extraction or offline OCR, and audits use
+        deterministic rules. No external or AI service is called.
       </p>
     </div>
   )

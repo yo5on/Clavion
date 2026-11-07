@@ -1,11 +1,15 @@
-"""Hospital bill extraction schema, plus arithmetic checks done in Python (never trusted to the model)."""
+"""Hospital bill extraction schema, plus arithmetic checks done in Python."""
 
 import re
 from decimal import Decimal
 
-from pydantic import BaseModel, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, Field, field_validator
 
 TOLERANCE = Decimal("0.01")
+NonNegative = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
+Positive = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
 
 
 def _money(v):
@@ -17,9 +21,9 @@ def _money(v):
 
 class BillLineItem(BaseModel):
     description: str
-    quantity: Decimal | None = None
-    unit_price: Decimal | None = None
-    amount: Decimal
+    quantity: Positive | None = None
+    unit_price: NonNegative | None = None
+    amount: NonNegative
     category: str | None = None  # set by the local parser or manual correction; see services/parsers.categorize
 
     _clean = field_validator("quantity", "unit_price", "amount", mode="before")(_money)
@@ -30,8 +34,10 @@ class HospitalBill(BaseModel):
     bill_number: str | None = None
     patient_name: str | None = None
     bill_date: str | None = None  # as printed on the bill
+    admission_date: str | None = None  # as printed
+    discharge_date: str | None = None  # as printed
     line_items: list[BillLineItem]
-    total_amount: Decimal | None = None
+    total_amount: NonNegative | None = None
 
     _clean = field_validator("total_amount", mode="before")(_money)
 
@@ -48,11 +54,3 @@ class HospitalBill(BaseModel):
         elif abs(items_sum - self.total_amount) > TOLERANCE:
             issues.append(f"line items sum to {items_sum}, total says {self.total_amount}")
         return issues
-
-
-EXTRACTION_INSTRUCTIONS = """Extract the hospital bill into JSON with exactly these keys:
-{"hospital_name": str|null, "bill_number": str|null, "patient_name": str|null, "bill_date": str|null,
- "line_items": [{"description": str, "quantity": number|null, "unit_price": number|null, "amount": number}],
- "total_amount": number|null}
-Copy values exactly as printed. Use null for anything not present. Do not compute or correct amounts.
-Return only the JSON object."""

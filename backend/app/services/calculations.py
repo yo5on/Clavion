@@ -1,4 +1,4 @@
-"""Deterministic money calculations. The model may choose to call these; it never does the arithmetic itself."""
+"""Deterministic money calculations. Every amount in an audit comes from these Decimal functions."""
 
 from decimal import ROUND_HALF_UP, Decimal
 
