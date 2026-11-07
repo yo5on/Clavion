@@ -6,6 +6,6 @@ __pycache__/
 node_modules/
 dist/
 uploads/
-.claude/settings.local.json
+.claude/
 backend/scripts/results/
 backend/.provider_status.json
