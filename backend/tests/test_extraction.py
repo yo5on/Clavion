@@ -49,6 +49,15 @@ def test_percent_only_room_rent_limit_uses_sum_insured():
     assert policy.room_rent_limit_per_day == Decimal("3000.00") and policy.room_rent_clause == "3.1"
 
 
+def test_lakh_sum_insured_and_short_copay_wording():
+    # "Rs 5 Lakh" = 5,00,000, so 1% = Rs 5,000/day (was read as Rs 5, giving a Rs 0.05/day limit).
+    policy, _ = parsers.parse_policy("Sum Insured: Rs 5 Lakh\n3.1 Room Rent\nPayable up to 1% of Sum Insured per day."
+                                     "\n5.1 Co-payment\nCo-pay of 20% applies to every claim.")
+    assert policy.sum_insured == Decimal("500000") and policy.room_rent_limit_per_day == Decimal("5000.00")
+    assert policy.copay_percent == Decimal("20")
+    assert parsers.money("1.5 crore") == Decimal("15000000") and parsers.money("1,30,940.50") == Decimal("130940.50")
+
+
 def test_unparseable_text_is_flagged_not_invented():
     bill, warnings = parsers.parse_bill("hello world")
     assert bill.line_items == [] and bill.total_amount is None
