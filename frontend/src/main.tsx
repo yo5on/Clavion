@@ -12,7 +12,7 @@ import { ToastProvider } from './components/ui'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
       <Routes>
         <Route element={<Layout />}>
