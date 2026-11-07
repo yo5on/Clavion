@@ -5,10 +5,9 @@ uploaded document, a Clavion recalculation, suggested wording, or letter formali
 drop any statement before export. Nothing here makes a legal claim; the letter asks for review and explanation.
 """
 
-from decimal import Decimal
-
 from fpdf import FPDF
 
+from .currency import rs
 from ..schemas.claim import AppealStatement, AuditReport, Evidence, Finding, SettlementLetter
 
 DEMO_BANNER = "DEMO - SYNTHETIC DATA. NOT A REAL CLAIM."
@@ -16,10 +15,6 @@ DISCLAIMER = ("Clavion explains settlements using the uploaded documents. It is 
               "guarantee that any amount will be recovered.")
 DOC_LABELS = {"bill": "Hospital bill", "policy": "Policy wording", "settlement": "Settlement letter"}
 APPEAL_SOURCE = "Local template filled from audit findings (no AI)"
-
-
-def _rs(v: Decimal | None) -> str:
-    return "-" if v is None else f"Rs {v:,.2f}"
 
 
 def ref(e: Evidence) -> str:
@@ -46,8 +41,8 @@ def appeal_statements(report: AuditReport, s: SettlementLetter | None, patient: 
     add("Header", "standard", "Dear Sir/Madam,")
     add("Claim", "source_fact",
         f"I write about the settlement of the above claim for treatment of {name}"
-        f"{' at ' + s.hospital_name if s.hospital_name else ''}. The claim of {_rs(report.claimed_amount)} was "
-        f"settled for {_rs(report.approved_amount)}, with deductions of {_rs(report.total_deductions)}.",
+        f"{' at ' + s.hospital_name if s.hospital_name else ''}. The claim of {rs(report.claimed_amount)} was "
+        f"settled for {rs(report.approved_amount)}, with deductions of {rs(report.total_deductions)}.",
         ["Settlement letter: claimed and approved amounts"])
     if contest or unverified:
         add("Claim", "suggestion", "I have compared the deductions with my policy wording and the hospital bill, and "
@@ -55,7 +50,7 @@ def appeal_statements(report: AuditReport, s: SettlementLetter | None, patient: 
     for i, f in enumerate(contest, 1):
         sec = f"Deduction {f.id}: {f.description}"
         insurer_ev = next((e for e in f.evidence if e.doc_type == "settlement"), None)
-        add(sec, "source_fact", f"{i}. The settlement letter deducts {_rs(f.insurer_amount)} as \"{f.description}\".",
+        add(sec, "source_fact", f"{i}. The settlement letter deducts {rs(f.insurer_amount)} as \"{f.description}\".",
             [ref(insurer_ev)] if insurer_ev else [], f)
         clause_ev = next((e for e in f.evidence if e.doc_type == "policy" and e.found
                           and f.policy_clause and f.policy_clause.startswith(e.ref)), None)
@@ -67,19 +62,19 @@ def appeal_statements(report: AuditReport, s: SettlementLetter | None, patient: 
             add(sec, "calculation", "Recalculated from the bill and the policy: " + "; ".join(f.calculation) + ".",
                 bill_refs, f)
         add(sec, "suggestion", f"{f.contestable_reason or f.explanation} I request reconsideration of "
-                               f"{_rs(f.contestable_amount)}.", [], f)
+                               f"{rs(f.contestable_amount)}.", [], f)
     if unverified:
         for f in unverified:
             sec = f"Deduction {f.id}: {f.description}" if f.rule_id != "R-REC-01" else "Unexplained difference"
-            text = (f"The settlement reduces the claim by {_rs(f.insurer_amount)} more than the itemised deductions. "
+            text = (f"The settlement reduces the claim by {rs(f.insurer_amount)} more than the itemised deductions. "
                     f"Please itemise this amount and state the clause applied." if f.rule_id == "R-REC-01" else
-                    f"\"{f.description}\" ({_rs(f.insurer_amount)}): please state the policy clause and the "
+                    f"\"{f.description}\" ({rs(f.insurer_amount)}): please state the policy clause and the "
                     f"calculation applied" + (f", and provide {'; '.join(f.missing)}." if f.missing else "."))
             add(sec, "suggestion", text, [], f)
     if contest or unverified:
         add("Request", "suggestion",
-            f"I request reconsideration of {_rs(report.contestable_total)}"
-            + (f" and a written explanation for {_rs(report.unverified_total)}" if unverified else "")
+            f"I request reconsideration of {rs(report.contestable_total)}"
+            + (f" and a written explanation for {rs(report.unverified_total)}" if unverified else "")
             + ", and a reply within the timelines set by the applicable IRDAI grievance redressal guidelines. If the "
               "matter is not resolved, I may approach the Insurance Ombudsman.")
     add("Closing", "standard", "Enclosures: hospital bill, claim settlement letter, policy wording.")
@@ -161,7 +156,7 @@ def build_pdf(kind: str, title: str, report: AuditReport, appeal: str | None) ->
         pdf.set_font("Helvetica", "", 9.5)
         pdf.cell(80, 5.5, label)
         pdf.set_font("Helvetica", "B", 9.5)
-        pdf.cell(0, 5.5, _latin1(_rs(v) if v is not None or label != "Amount paid" else "not stated"),
+        pdf.cell(0, 5.5, _latin1(rs(v) if v is not None or label != "Amount paid" else "not stated"),
                  new_x="LMARGIN", new_y="NEXT")
     if report.readiness:
         pdf.ln(2)
@@ -171,8 +166,8 @@ def build_pdf(kind: str, title: str, report: AuditReport, appeal: str | None) ->
     for f in report.findings:
         pdf.ln(1)
         pdf.para(f"{f.id}. {f.description}  [{STATUS_WORDS[f.status]}]", 10, "B")
-        pdf.para(f"Rule {f.rule_id} ({f.rule_title}). Deducted {_rs(f.insurer_amount)}; supported "
-                 f"{_rs(f.supported_amount)}; contestable {_rs(f.contestable_amount)}.", 9)
+        pdf.para(f"Rule {f.rule_id} ({f.rule_title}). Deducted {rs(f.insurer_amount)}; supported "
+                 f"{rs(f.supported_amount)}; contestable {rs(f.contestable_amount)}.", 9)
         pdf.para(f"Insurer stated: {f.insurer_statement}", 9)
         if f.policy_clause:
             pdf.para(f"Policy clause applied: {f.policy_clause}", 9)

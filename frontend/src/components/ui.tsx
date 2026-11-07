@@ -77,11 +77,12 @@ export function Section({ title, action, children, className = '', id }: {
 
 /** A rupee figure with tabular digits and de-emphasised symbol and paise, so magnitudes compare at a glance. */
 export function Amount({ value, className = '' }: { value: Money | number | null | undefined; className?: string }) {
-  const s = rupees(typeof value === 'number' ? value.toFixed(2) : value)
+  const s = rupees(value)
   if (s === '—') return <span className={`text-faint ${className}`}>—</span>
-  const [whole, paise] = s.slice(1).split('.')
+  const [whole, paise] = s.slice(s.indexOf('₹') + 1).split('.')
   return (
     <span className={`whitespace-nowrap tabular-nums ${className}`}>
+      {s.startsWith('-') && '−'}
       <span className="mr-[0.06em] text-[0.8em] font-normal">₹</span>
       {whole}
       <span className="text-[0.72em] font-normal">.{paise}</span>
@@ -196,12 +197,12 @@ export function LedgerBar({ approved, supported, contestable, unverified, classN
   return (
     <div
       role="img"
-      aria-label={parts.map(([l, v]) => `${l} ${rupees(v.toFixed(2))}`).join(', ')}
+      aria-label={parts.map(([l, v]) => `${l} ${rupees(v)}`).join(', ')}
       className={`flex w-full gap-[3px] overflow-hidden rounded-full ${className}`}
     >
       {parts.map(([label, v, fill]) =>
         v > 0 ? (
-          <span key={label} title={`${label}: ${rupees(v.toFixed(2))}`} className={`${fill} min-w-1 rounded-full transition-[flex-grow] duration-700 ease-apple`}
+          <span key={label} title={`${label}: ${rupees(v)}`} className={`${fill} min-w-1 rounded-full transition-[flex-grow] duration-700 ease-apple`}
             style={{ flexGrow: v / total }} />
         ) : null,
       )}

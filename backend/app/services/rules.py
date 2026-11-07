@@ -19,6 +19,7 @@ from ..schemas.bill import HospitalBill
 from ..schemas.claim import (Check, Condition, Evidence, FieldMeta, PolicyDocument, SettlementDeduction,
                              SettlementLetter)
 from . import calculations as calc
+from .currency import rs
 from .parsers import CATEGORY_LABELS, categorize, parse_date
 from .policy_analysis import token_overlap, tokens
 
@@ -42,10 +43,6 @@ BASIS = {
     "reconciliation": "Settlement letter arithmetic (claimed - approved - listed deductions)",
 }
 ANNEX_REF = re.compile(r"\b(Annexure|Appendix|Schedule|List)\s*[-–]?\s*([IVX]+|\d+|[A-Z])\b")
-
-
-def rs(v: Decimal | None) -> str:
-    return "-" if v is None else f"Rs {v:,.2f}"
 
 
 def cat(item) -> str:

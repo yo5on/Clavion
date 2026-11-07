@@ -152,7 +152,7 @@ def test_case1_conflicting_totals_are_reported(loaded):
     gap = r.findings[-1]
     assert (gap.category, gap.status, gap.insurer_amount, gap.basis) == (
         "Unexplained difference", "unverified", 100, "reconciliation")
-    assert any("states total deductions Rs 250.00" in m for m in r.missing_information)
+    assert any("states total deductions ₹250.00" in m for m in r.missing_information)
 
 
 def test_case3_conditional_copay_stays_unverified(loaded):

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from ..schemas.bill import BillLineItem, HospitalBill
 from ..schemas.claim import (FieldMeta, PolicyClause, PolicyDocument, SettlementDeduction, SettlementLetter,
                              SourceRef, SubLimit)
+from .currency import rs
 
 # Plain integers without a comma or decimals (e.g. "26000") are only read as money on a bill line that proves
 # itself, "qty x rate = amount" with exact arithmetic (INT_ITEM_RE), or after a rupee sign; elsewhere they are too
@@ -425,8 +426,8 @@ def _per_day_limit(c: PolicyClause | None, sum_insured: Decimal | None) -> tuple
         return None, None
     limit = min(candidates)
     if from_pct is not None and (not explicit or from_pct < min(explicit)):
-        how = f"{pct.group(1)}% of the sum insured Rs {sum_insured:,} = Rs {from_pct:,}"
-        how += f" (lower than the stated maximum Rs {min(explicit):,})" if explicit else ""
+        how = f"{pct.group(1)}% of the sum insured {rs(sum_insured)} = {rs(from_pct)}"
+        how += f" (lower than the stated maximum {rs(min(explicit))})" if explicit else ""
         return limit, how
     return limit, None
 
