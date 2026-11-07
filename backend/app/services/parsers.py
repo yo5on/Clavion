@@ -505,7 +505,10 @@ def extract_policy(text: str) -> Extraction:
     copay_cond = None
     if copay_pct:
         from_clause("copay_percent", copay)
-        if m := re.search(r"((?:where|if|for|in\s+case)\s[^.]+)", " ".join(copay.text.split("\n")[1:]), re.I):
+        cond_re = r"((?:where|if|for|in\s+case)\s[^.]+)"
+        # the heading line is skipped (its title may say "for ..."), except after the % on a one-line clause
+        if m := (re.search(cond_re, " ".join(copay.text.split("\n")[1:]), re.I)
+                 or re.search(cond_re, copay.text[copay_pct.end():].split("\n")[0], re.I)):
             copay_cond = m.group(1).strip()
             from_clause("copay_condition", copay)
     for path, c in (("room_rent_clause", room), ("icu_clause", icu),

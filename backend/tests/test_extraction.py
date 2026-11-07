@@ -58,6 +58,59 @@ def test_lakh_sum_insured_and_short_copay_wording():
     assert parsers.money("1.5 crore") == Decimal("15000000") and parsers.money("1,30,940.50") == Decimal("130940.50")
 
 
+@pytest.mark.parametrize("s,value", [("Rs 5 Lakh", "500000"), ("5 lakh", "500000"), ("2 lakhs", "200000"),
+                                     ("1.5 crore", "15000000"), ("1.5 Crore", "15000000"), ("3 lacs", "300000"),
+                                     ("1,30,940.50", "130940.50"), ("26000", "26000"), ("4,800.00", "4800.00")])
+def test_money_indian_formats(s, value):
+    assert parsers.money(s.removeprefix("Rs ")) == Decimal(value)
+
+
+def test_lakh_crore_in_policy_fields():
+    policy, _ = parsers.parse_policy("Sum Insured: Rs 1.5 Crore\n3.1 Room Rent\nUp to Rs 1 lakh per day.\n"
+                                     "4.4 Sub-limits\n- Cataract surgery: Rs 2 lakhs per eye")
+    assert policy.sum_insured == Decimal("15000000")
+    assert policy.room_rent_limit_per_day == Decimal("100000")
+    assert [(s.name, s.limit) for s in policy.sub_limits] == [("Cataract surgery", Decimal("200000"))]
+
+
+def test_ordinary_amounts_unchanged():
+    policy, _ = parsers.parse_policy("Sum Insured: Rs 3,00,000\n3.1 Room Rent\nUp to Rs 5,000 per day.")
+    assert (policy.sum_insured, policy.room_rent_limit_per_day) == (Decimal("300000"), Decimal("5000"))
+    letter, _ = parsers.parse_settlement("Amount Claimed: Rs 1,30,940.50\nAmount Approved: Rs 97,069.62")
+    assert (letter.claimed_amount, letter.approved_amount) == (Decimal("130940.50"), Decimal("97069.62"))
+
+
+@pytest.mark.parametrize("wording,pct", [("Co-pay of 20% applies to every claim.", "20"),
+                                         ("A co-payment of 15% applies to every claim.", "15"),
+                                         ("A 20% co-pay applies to every claim.", "20")])
+def test_unconditional_copay_wordings(wording, pct):
+    policy, _ = parsers.parse_policy(f"5.1 Co-payment\n{wording}")
+    assert policy.copay_percent == Decimal(pct) and policy.copay_condition is None and policy.copay_clause == "5.1"
+
+
+CONDITIONAL_COPAY = "Co-payment: 10% where insured is aged 61 or above"
+
+
+@pytest.mark.parametrize("text", [f"5.1 Co-payment\n{CONDITIONAL_COPAY}", f"5.1 {CONDITIONAL_COPAY}"])
+def test_conditional_copay_keeps_condition(text):
+    policy, _ = parsers.parse_policy(text)
+    assert policy.copay_percent == Decimal("10") and policy.copay_clause == "5.1"
+    assert policy.copay_condition == "where insured is aged 61 or above"
+
+
+@pytest.mark.parametrize("text", [f"5.1 Co-payment\n{CONDITIONAL_COPAY}", f"5.1 {CONDITIONAL_COPAY}"])
+def test_conditional_copay_needs_clarification_in_audit(text):
+    from app.services.audit import run_audit
+
+    policy, _ = parsers.parse_policy(text)
+    letter = SettlementLetter(claimed_amount="1000.00", approved_amount="900.00",
+                              deductions=[{"description": "Co-payment 10%", "amount": "100.00"}])
+    bill = HospitalBill(line_items=[{"description": "Room rent", "amount": "1000.00"}])
+    f = run_audit(bill, policy, letter).findings[0]
+    # not "supported": the patient's age is not in the documents, so the copay is not universally applicable
+    assert f.status == "unverified" and f.supported_amount is None and "aged 61" in f.explanation
+
+
 def test_unparseable_text_is_flagged_not_invented():
     bill, warnings = parsers.parse_bill("hello world")
     assert bill.line_items == [] and bill.total_amount is None
