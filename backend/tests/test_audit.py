@@ -81,8 +81,9 @@ A co-payment of 10% applies to every admissible claim.""")
         {"description": "Co-payment 10%", "amount": "3500.00"}])
     sub, copay = run_audit(bill, policy, letter).findings
     assert (sub.status, sub.supported_amount, sub.contestable_amount) == ("contestable", D("25000.00"), D("5000.00"))
-    # admissible = 65,000 - 30,000 = 35,000; 10% = 3,500
-    assert (copay.status, copay.supported_amount, copay.contestable_amount) == ("supported", D("3500.00"), D("0.00"))
+    # The insurer's 5,000 sub-limit over-deduction must not shrink the co-pay base: CLAVION uses its own 25,000.
+    # admissible = 65,000 - 25,000 = 40,000; 10% = 4,000. Insurer took 3,500 (less), so nothing to contest.
+    assert (copay.status, copay.supported_amount, copay.contestable_amount) == ("supported", D("4000.00"), D("0.00"))
 
 
 def test_conditional_copay_is_unverified():

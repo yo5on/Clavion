@@ -176,7 +176,12 @@ def run_audit(bill: HospitalBill | None, policy: PolicyDocument | None, settleme
     if not settlement:
         ctx.note("Settlement letter not provided: there are no deductions to audit")
 
-    assessed = [_assess(ctx, n, d) for n, d in enumerate(s.deductions, 1)]
+    # Co-pay is assessed last: its base uses CLAVION's recalculation of the other deductions, not the insurer's figures.
+    results = {}
+    for n, d in sorted(enumerate(s.deductions, 1), key=lambda x: _kind(ctx, x[1])[0] == "copay"):
+        results[n] = _assess(ctx, n, d)
+        ctx.assessed[n] = results[n][0]
+    assessed = [results[n] for n in sorted(results)]
     findings = [f for f, _ in assessed]
     total_ded = calc.bill_total(d.amount for d in s.deductions)
 
