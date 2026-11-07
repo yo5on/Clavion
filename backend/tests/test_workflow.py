@@ -41,13 +41,15 @@ def test_full_document_to_audit_workflow(client):
     assert body["status"] == "audited" and body["demo"] is True
     assert audit["contestable_total"] == "4447.80" and audit["unverified_total"] == "2500.00"
     assert [f["status"] for f in audit["findings"]] == fixtures.EXPECTED["statuses"]
-    assert "DEMO - SYNTHETIC DATA" in body["appeal"]["text"] and "Rs 4,447.80" in body["appeal"]["text"]
+    assert "DEMO - SYNTHETIC DATA" in body["appeal"]["text"] and "₹4,447.80" in body["appeal"]["text"]
     assert "(no AI)" in body["appeal"]["source"]
 
     report = client.get(f"/api/cases/{case['id']}/export.pdf")
     assert report.status_code == 200 and report.headers["content-type"] == "application/pdf"
     text = _pdf_text(report.content)
     assert "DEMO - SYNTHETIC DATA" in text and "Rs 3,447.80" in text and "Clause 4.3" in text
+    # PDF core fonts have no ₹ glyph, so the PDF writes "Rs"; the grouping must still be Indian
+    assert "Rs 1,30,940.50" in text and "Rs 97,069.62" in text and "130,940" not in text
 
     client.put(f"/api/cases/{case['id']}/appeal", json={"text": "Edited appeal text"})
     appeal = client.get(f"/api/cases/{case['id']}/export.pdf?kind=appeal")

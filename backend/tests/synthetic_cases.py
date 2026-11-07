@@ -390,7 +390,7 @@ The following items are not payable under this policy:
                   contestable=[D("0.00"), D("2000.00")], basis=["recalculated", "clause_absent"],
                   total=D("14000.00"), contestable_total=D("2000.00"), unverified_total=D("0.00"),
                   supported_total=D("12000.00"),
-                  missing=["Bill lines total Rs 35,000.00 but the claim is for Rs 36,000.00",
+                  missing=["Bill lines total ₹35,000.00 but the claim is for ₹36,000.00",
                            "Policy number on the letter (KHP/2026/90090) differs from the policy (KHP/2026/90009)"]),
     failed_checks=["C-REC-05", "C-DUP-01", "C-STAY-01", "C-ID-01", "C-ID-02", "C-REC-06"],
 )

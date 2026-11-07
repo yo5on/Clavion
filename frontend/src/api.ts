@@ -329,11 +329,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-export function rupees(v: Money | null | undefined): string {
-  return v === null || v === undefined || v === '' ? '—' : `₹${inr.format(Number(v))}`
-}
+export { rupees } from './money'
 
 /** Letter text from the included statements; mirrors services/report.compose on the server. */
 export function composeAppeal(statements: AppealStatement[]): string {

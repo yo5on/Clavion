@@ -17,6 +17,7 @@ from .demo import fixtures
 from .schemas.claim import AppealStatement, AuditReport, DocType, FieldMeta, Provenance
 from .services import documents, report as reports
 from .services.audit import run_audit
+from .services.currency import rs
 from .services.parsers import PAGE_BREAK, is_synthetic
 from .services.providers import PROVIDERS, SCHEMAS, ProviderUnavailable, get_provider
 
@@ -258,7 +259,7 @@ def audit_case(case_id: str = CaseId, s: Session = Depends(get_session)):
     rep["appeal"] = {"text": reports.compose(statements), "statements": [x.model_dump() for x in statements],
                      "source": reports.APPEAL_SOURCE, "edited": False}
     _event(rep, "audit_run", f"rules {result.rules_version}: {len(result.findings)} finding(s), contestable "
-                             f"Rs {result.contestable_total:,.2f}, needs clarification Rs {result.unverified_total:,.2f}")
+                             f"{rs(result.contestable_total)}, needs clarification {rs(result.unverified_total)}")
     return _save(s, case, rep, "audited")
 
 

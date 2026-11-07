@@ -10,6 +10,7 @@ import {
   type SettlementLetter,
 } from '../api'
 import { Amount, Field, btn, cell, input } from './ui'
+import { fromPaise, paise } from '../money'
 
 type Fields = Record<string, FieldMeta>
 type Editor<T> = { value: T; onSave: (v: T) => Promise<void>; text: string; fields?: Fields }
@@ -55,8 +56,8 @@ function RowSource({ m, qty }: { m: FieldMeta | undefined; qty?: boolean }) {
   )
 }
 
-// Sum shown for review only; the audit recomputes every total in Python with Decimal.
-const displaySum = (xs: (string | null)[]) => xs.reduce((s, x) => s + (Number(x) || 0), 0).toFixed(2)
+// Sum shown for review only (exact paise); the audit recomputes every total in Python with Decimal.
+const displaySum = (xs: (string | null)[]) => fromPaise(xs.reduce((s, x) => s + paise(x), 0n))
 
 function useDraft<T>(value: T, onSave: (v: T) => Promise<void>) {
   const [draft, setDraft] = useState<T>(value)
@@ -151,12 +152,12 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 
 function Reconcile({ sum, stated, what }: { sum: string; stated: string | null; what: string }) {
   if (!stated) return <span className="text-[13px] text-mute">No stated {what} to compare</span>
-  const diff = Number(sum) - Number(stated)
-  return Math.abs(diff) < 0.005 ? (
+  const diff = paise(sum) - paise(stated)
+  return diff === 0n ? (
     <span className="flex items-center gap-1.5 text-[13px] text-ok"><CheckCircle2 className="size-3.5" /> Matches the stated {what}</span>
   ) : (
     <span className="flex items-center gap-1.5 text-[13px] font-medium text-caution">
-      <AlertTriangle className="size-3.5" /> Differs from the stated {what} (<Amount value={stated} />) by <Amount value={Math.abs(diff)} />
+      <AlertTriangle className="size-3.5" /> Differs from the stated {what} (<Amount value={stated} />) by <Amount value={fromPaise(diff < 0n ? -diff : diff)} />
     </span>
   )
 }

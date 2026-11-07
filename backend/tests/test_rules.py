@@ -66,14 +66,14 @@ def test_room_rent_is_recalculated_line_by_line():
     bill = HospitalBill(line_items=[item("Room rent - ward", 2, "3000.00"), item("Room rent - deluxe", 2, "7000.00")])
     f = one(bill, ("Room rent above eligible limit", "4000.00", None))
     assert (f.status, f.supported_amount, f.contestable_amount) == ("supported", D("4000.00"), D("0.00"))
-    assert f.rule_id == "R-ROOM-01" and any("Total excess = Rs 4,000.00" in s for s in f.calculation)
+    assert f.rule_id == "R-ROOM-01" and any("Total excess = ₹4,000.00" in s for s in f.calculation)
 
 
 def test_room_rent_within_limit_is_contestable_with_reason():
     bill = HospitalBill(line_items=[item("Room rent", 3, "4500.00")])
     f = one(bill, ("Room rent above limit", "1500.00", None))
     assert (f.status, f.contestable_amount) == ("contestable", D("1500.00"))
-    assert "within the Rs 5,000.00/day limit" in f.contestable_reason
+    assert "within the ₹5,000.00/day limit" in f.contestable_reason
     assert [c.met for c in f.conditions] == [True, True, False]
 
 
