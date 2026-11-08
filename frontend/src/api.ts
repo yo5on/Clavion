@@ -252,8 +252,13 @@ export interface CaseSummary {
   contestable_total: Money | null
 }
 
+// Empty by default: local Vite proxy or a same-origin reverse proxy handles /api.
+export function apiUrl(path: string, origin = import.meta.env?.VITE_API_ORIGIN ?? ''): string {
+  return origin.trim().replace(/\/+$/, '') + path
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, init).catch(() => {
+  const r = await fetch(apiUrl(path), init).catch(() => {
     throw new Error('Cannot reach the Clavion server. Check your connection and that the backend is running.')
   })
   if (r.status === 204) return undefined as T
@@ -304,9 +309,9 @@ export const api = {
   deleteCase: (id: string) => request<void>(`/api/cases/${id}`, { method: 'DELETE' }),
   saveAppeal: (id: string, body: { text: string } | { statements: AppealStatement[] }) =>
     request<CaseDetail>(`/api/cases/${id}/appeal`, json('PUT', body)),
-  exportUrl: (id: string, kind: 'report' | 'appeal') => `/api/cases/${id}/export.pdf?kind=${kind}`,
+  exportUrl: (id: string, kind: 'report' | 'appeal') => apiUrl(`/api/cases/${id}/export.pdf?kind=${kind}`),
   demoDocumentUrl: (docType: DocType, format: 'pdf' | 'png' = 'pdf') =>
-    `/api/demo/documents/${docType}?format=${format}`,
+    apiUrl(`/api/demo/documents/${docType}?format=${format}`),
 }
 
 export const DOC_LABELS: Record<DocType, string> = {
@@ -329,7 +334,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-export { rupees } from './money'
+export { rupees } from './money.ts'
 
 /** Letter text from the included statements; mirrors services/report.compose on the server. */
 export function composeAppeal(statements: AppealStatement[]): string {

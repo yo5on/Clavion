@@ -102,6 +102,12 @@ npm run dev                 # http://localhost:5173
 Try it without documents: **Try the synthetic demo** on the dashboard, or download the synthetic PDFs/images from
 the New audit page and upload them. Everything derived from synthetic documents is labelled DEMO.
 
+## Online use
+
+GitHub Pages hosts only the frontend. It cannot run FastAPI, OCR or SQLite; the
+current Pages deployment does not provide a working audit service.
+See [hosting options and configuration](docs/HOSTING.md) for the next steps.
+
 ## Tests
 
 ```bash
