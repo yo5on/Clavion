@@ -1,36 +1,43 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api } from '../api'
+import { api, type OwnerSession } from '../api'
+import { createSessionRefresh } from '../owner-session'
 import Logo from './Logo'
 import { btn, ErrorNote, Field, input, Spinner } from './ui'
 
 export default function OwnerAccess({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<{ enabled: boolean; authenticated: boolean } | null>(null)
+  const [session, setSession] = useState<OwnerSession | null>(null)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  function refresh() {
-    return api.authStatus().then((current) => {
-      setSession(current)
-      setError(null)
-    }, (e: Error) => setError(e.message))
-  }
+  const [sessionRefresh] = useState(() => createSessionRefresh((current) => {
+    setSession(current)
+    setError(null)
+  }, (error) => setError(error.message)))
 
   useEffect(() => {
-    void refresh()
-    const expired = () => { setSession({ enabled: true, authenticated: false }); setPassword('') }
+    void sessionRefresh.refresh()
+    const expired = () => {
+      sessionRefresh.invalidate()
+      setSession({ enabled: true, authenticated: false })
+      setPassword('')
+    }
     window.addEventListener('clavion-auth-required', expired)
-    return () => window.removeEventListener('clavion-auth-required', expired)
-  }, [])
+    return () => {
+      sessionRefresh.invalidate()
+      window.removeEventListener('clavion-auth-required', expired)
+    }
+  }, [sessionRefresh])
 
   if (!session || !session.authenticated) return (
     <main className="mx-auto max-w-sm space-y-6 px-5 py-16">
       <Logo />
       <ErrorNote error={error} />
-      {!session ? (error ? <button className={btn.secondary} onClick={() => void refresh()}>Retry connection</button>
+      {!session ? (error ? <button className={btn.secondary} onClick={() => void sessionRefresh.refresh()}>Retry connection</button>
         : <Spinner label="Connecting to Clavion" />) : (
         <form className="space-y-5" onSubmit={async (e) => {
           e.preventDefault()
+          sessionRefresh.invalidate()
           setBusy(true)
           setError(null)
           try {
@@ -57,6 +64,7 @@ export default function OwnerAccess({ children }: { children: ReactNode }) {
     {session.enabled && <div className="mx-auto flex max-w-[1120px] items-center justify-end gap-3 px-5 py-2 sm:px-8">
       <ErrorNote error={error} />
       <button className={btn.linkSm} disabled={busy} onClick={async () => {
+        sessionRefresh.invalidate()
         setBusy(true)
         setError(null)
         try { await api.logout(); setSession({ enabled: true, authenticated: false }) }

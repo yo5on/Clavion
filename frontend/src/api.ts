@@ -8,6 +8,11 @@ export interface Health {
   analysis: string
 }
 
+export interface OwnerSession {
+  enabled: boolean
+  authenticated: boolean
+}
+
 export type ProviderState = 'available'
 
 // Both providers run on the Clavion server; neither calls an external or AI service.
@@ -292,7 +297,7 @@ const json = (method: string, body?: unknown): RequestInit => ({
 })
 
 export const api = {
-  authStatus: () => request<{ enabled: boolean; authenticated: boolean }>('/api/auth/session'),
+  authStatus: () => request<OwnerSession>('/api/auth/session'),
   login: (password: string) => request<{ authenticated: boolean }>('/api/auth/login', json('POST', { password })),
   logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' }),
   health: () => request<Health>('/api/health'),

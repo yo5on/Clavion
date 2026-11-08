@@ -2,6 +2,8 @@
 
 import hashlib
 import io
+import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
@@ -302,3 +304,56 @@ def test_auth_can_be_disabled_for_existing_local_workflow():
         assert local.get("/api/health").status_code == 200
         assert local.get("/api/auth/session").json() == {"enabled": False, "authenticated": True}
         assert login(local).status_code == 403
+
+
+def test_existing_database_upgrade_preserves_cases_and_sessions_across_restart(tmp_path, monkeypatch, password_hash):
+    path = tmp_path / "legacy.db"
+    report = json.dumps({"demo": False, "documents": {}, "audit": None, "appeal": None})
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE cases (id VARCHAR(36) PRIMARY KEY, title VARCHAR(200) NOT NULL, "
+                           "status VARCHAR(20) NOT NULL, created_at DATETIME NOT NULL, report JSON)")
+        connection.execute("INSERT INTO cases VALUES (?, ?, ?, ?, ?)",
+                           ("legacy", "SYNTHETIC legacy claim", "draft", "2026-01-01 00:00:00", report))
+        before = connection.execute("SELECT * FROM cases").fetchall()
+    engine = create_engine(f"sqlite:///{path.as_posix()}", connect_args={"check_same_thread": False})
+    factory = sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(db, "SessionLocal", factory)
+    monkeypatch.setattr(auth, "SessionLocal", factory)
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "auth_password_hash", SecretStr(password_hash))
+    monkeypatch.setattr(settings, "cors_origins", ORIGIN)
+    try:
+        with TestClient(create_app(), base_url="https://api.clavion.test", headers={"Origin": ORIGIN}) as client:
+            assert client.get("/api/cases/legacy").status_code == 401
+            assert login(client).status_code == 200
+            assert client.get("/api/cases/legacy").json()["title"] == "SYNTHETIC legacy claim"
+            token = client.cookies.get(auth.cookie_name())
+        engine.dispose()  # Force fresh connections on restart.
+        with TestClient(create_app(), base_url="https://api.clavion.test", headers={"Origin": ORIGIN}) as restarted:
+            restarted.cookies.set(auth.cookie_name(), token)
+            assert restarted.get("/api/cases/legacy").status_code == 200
+            assert restarted.post("/api/auth/logout").status_code == 200
+        with sqlite3.connect(path) as connection:
+            assert connection.execute("SELECT * FROM cases").fetchall() == before
+            assert connection.execute("SELECT COUNT(*) FROM owner_sessions").fetchone()[0] == 0
+            assert connection.execute("SELECT attempts FROM login_throttle WHERE id=1").fetchone()[0] == 1
+    finally:
+        engine.dispose()
+
+
+def test_enabled_local_authentication_uses_separate_loopback_cookie(secured, monkeypatch, password_hash):
+    Settings(_env_file=None, auth_enabled=True, auth_password_hash=password_hash,
+             auth_cookie_secure=False, cors_origins="http://localhost:5173")
+    monkeypatch.setattr(settings, "auth_cookie_secure", False)
+    monkeypatch.setattr(settings, "cors_origins", "http://localhost:5173")
+    with TestClient(create_app(), base_url="http://localhost:8000",
+                    headers={"Origin": "http://localhost:5173"}) as local:
+        assert local.get("/api/cases").status_code == 401
+        response = login(local)
+        assert response.status_code == 200
+        cookie = response.headers["set-cookie"]
+        assert "clavion-local=" in cookie and "HttpOnly" in cookie and "Secure" not in cookie
+        assert local.get("/api/cases").status_code == 200
+        assert local.post("/api/auth/logout").status_code == 200
+        assert local.get("/api/cases").status_code == 401
