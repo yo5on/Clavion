@@ -13,11 +13,10 @@ and proxying `/api` to FastAPI: this also protects downloads without cross-origi
 login complications. A small existing Linux server is the cheapest option if one
 is already available; its operator must maintain HTTPS, security updates and backups.
 
-No authentication or per-user isolation exists in the application. Anyone who can
-reach the API can list, read, modify and delete all cases. CORS is not authentication.
-Do not expose it publicly with real records. Protect every API route, including
-PDF exports and API documentation; a public multi-user service needs authentication
-and case ownership checks before release.
+Enable [single-owner authentication](SECURITY.md) before exposing the API. With
+authentication disabled, anyone who reaches it can read, modify and delete all cases.
+CORS is not authentication. The single owner has access to every case; multi-user
+hosting still requires separate identities and case ownership checks.
 
 ## Hosting comparison
 
@@ -54,7 +53,14 @@ reverse proxy on the same machine handles access. Create/mount `/data` first and
 DATABASE_URL=sqlite:////data/clavion.db
 CORS_ORIGINS=https://your-frontend.example
 LOG_LEVEL=INFO
+AUTH_ENABLED=true
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=lax
 ```
+
+Set `AUTH_PASSWORD_HASH` through the host's secret environment after generating it
+with `python -m app.password`. Follow [SECURITY.md](SECURITY.md) for HTTPS, password
+rotation, backups and recovery. No credential is included in this example.
 
 For Pages, the allowed origin is `https://yo5on.github.io`, without `/Clavion/`.
 Keep the database outside the release directory. Use a fresh empty database for
@@ -80,8 +86,10 @@ secrets in a `VITE_` variable: these values become public JavaScript.
 The Pages workflow deliberately remains unchanged. Configuring an origin and
 rebuilding/publishing it is a separate deployment requiring approval. `VITE_BASE`
 still controls the frontend asset/router path; it does not select a backend.
-Cross-origin cookie-based access gateways need additional credential/CORS handling
-that this client does not implement; prefer the single-origin protected setup above.
+The client includes cookies on API and PDF fetches. Prefer a single origin or
+same-site HTTPS subdomains with `AUTH_COOKIE_SAMESITE=lax`. Pages and an unrelated
+backend domain require `AUTH_COOKIE_SAMESITE=none`; browsers may still block these
+third-party cookies. Use a same-site domain or reverse proxy for reliable access.
 
 Hosting moves processing and extracted records onto the server. It is no longer
 processing exclusively on the user's machine, even though it still calls no AI

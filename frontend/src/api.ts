@@ -258,11 +258,12 @@ export function apiUrl(path: string, origin = import.meta.env?.VITE_API_ORIGIN ?
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(apiUrl(path), init).catch(() => {
+  const r = await fetch(apiUrl(path), { ...init, credentials: 'include' }).catch(() => {
     throw new Error('Cannot reach the Clavion server. Check your connection and that the backend is running.')
   })
   if (r.status === 204) return undefined as T
   if (!r.ok) {
+    if (r.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('clavion-auth-required'))
     let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).` : `Request failed (${r.status}).`
     try {
       const body = await r.json()
@@ -291,6 +292,9 @@ const json = (method: string, body?: unknown): RequestInit => ({
 })
 
 export const api = {
+  authStatus: () => request<{ enabled: boolean; authenticated: boolean }>('/api/auth/session'),
+  login: (password: string) => request<{ authenticated: boolean }>('/api/auth/login', json('POST', { password })),
+  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' }),
   health: () => request<Health>('/api/health'),
   providers: () => request<Provider[]>('/api/providers'),
   cases: () => request<CaseSummary[]>('/api/cases'),

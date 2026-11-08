@@ -294,8 +294,9 @@ export function PdfButton({ href, children, disabled, title, className = btn.sec
   async function download() {
     setBusy(true)
     try {
-      const r = await fetch(href)
+      const r = await fetch(href, { credentials: 'include' })
       if (!r.ok) {
+        if (r.status === 401) window.dispatchEvent(new Event('clavion-auth-required'))
         const body = await r.json().catch(() => null)
         throw new Error(typeof body?.detail === 'string' ? body.detail.charAt(0).toUpperCase() + body.detail.slice(1) : `Export failed (${r.status})`)
       }
