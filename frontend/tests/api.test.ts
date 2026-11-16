@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { api, apiUrl } from '../src/api.ts'
+import { api, apiUrl, NO_BACKEND } from '../src/api.ts'
 
 test('API URLs preserve local routing and support a separately hosted backend', () => {
   for (const path of ['/api/health', '/api/cases/id/export.pdf?kind=appeal', '/api/demo/documents/bill?format=pdf']) {
@@ -54,4 +54,12 @@ test('an expired session notifies the UI and rejects the protected request', asy
   ))
   await assert.rejects(api.cases(), /Authentication required/)
   assert.equal(expired, 1)
+})
+
+test('a static host 404 explains that the backend is missing; API 404s keep their own message', async (t) => {
+  const responses = [new Response('<html>404</html>', { status: 404 }),
+    new Response('{"detail":"case not found"}', { status: 404 })]
+  t.mock.method(globalThis, 'fetch', async () => responses.shift()!)
+  await assert.rejects(api.authStatus(), { message: NO_BACKEND })
+  await assert.rejects(api.case('id'), { message: 'Case not found' })
 })
