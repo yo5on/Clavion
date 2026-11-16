@@ -262,6 +262,9 @@ export function apiUrl(path: string, origin = import.meta.env?.VITE_API_ORIGIN ?
   return origin.trim().replace(/\/+$/, '') + path
 }
 
+export const NO_BACKEND = 'No Clavion backend is available at this address. This site hosts only the interface; '
+  + 'auditing requires the FastAPI backend running locally. See the README in the yo5on/Clavion repository for setup.'
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(apiUrl(path), { ...init, credentials: 'include' }).catch(() => {
     throw new Error('Cannot reach the Clavion server. Check your connection and that the backend is running.')
@@ -269,7 +272,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (r.status === 204) return undefined as T
   if (!r.ok) {
     if (r.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('clavion-auth-required'))
-    let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).` : `Request failed (${r.status}).`
+    let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).`
+      // A non-JSON 404 comes from a static host (e.g. GitHub Pages), not from the Clavion API.
+      : r.status === 404 ? NO_BACKEND : `Request failed (${r.status}).`
     try {
       const body = await r.json()
       // Server messages are lowercase fragments; the UI shows them as sentences.

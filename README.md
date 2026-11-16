@@ -85,10 +85,12 @@ backend/   Python + FastAPI + Pydantic + SQLAlchemy (SQLite)
 
 ## Setup
 
-Requirements: Python 3.11+, Node 20+.
+Requirements: Python 3.11+, Node 20+. Run the backend and the frontend in two terminals.
 
 ```bash
 cd backend
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
@@ -96,28 +98,42 @@ python -m uvicorn app.main:app --reload --port 8000
 ```bash
 cd frontend
 npm install
-npm run dev                 # http://localhost:5173
+npm run dev                 # open http://localhost:5173
 ```
 
-Try it without documents: **Try the synthetic demo** on the dashboard, or download the synthetic PDFs/images from
-the New audit page and upload them. Everything derived from synthetic documents is labelled DEMO.
+No configuration is needed: authentication is off by default, the API binds to `127.0.0.1`, and the SQLite
+database is created at `backend/clavion.db` on first start. `.env.example` lists the optional settings.
+The first OCR of an image can take a few seconds while the local ONNX model loads.
+
+Try it without your own documents: **Open the demo claim** on the dashboard, or download the synthetic PDFs/images
+from the New audit page and upload them. Everything derived from synthetic documents is labelled DEMO.
 
 ## Online use
 
-GitHub Pages hosts only the frontend. It cannot run FastAPI, OCR or SQLite; the
-current Pages deployment does not provide a working audit service.
+The frontend is published at **https://yo5on.github.io/Clavion/** for reference only. GitHub Pages hosts static
+files: it cannot run FastAPI, OCR or SQLite, so that page shows a "no Clavion backend available" message and
+cannot audit anything. Full auditing requires the backend running locally as described above.
 See [hosting options and configuration](docs/HOSTING.md) for the next steps.
 Single-owner authentication is available; follow [secure configuration and recovery](docs/SECURITY.md)
 before exposing the API. Authentication is disabled by default for local use.
+
+## Known limitations
+
+- No hosted backend: the public page is the interface only; audits run locally.
+- Parsers are deterministic and tuned to common Indian hospital-bill, policy and settlement-letter layouts.
+  Unusual layouts or poor scans need manual correction on the review screen (every field is editable).
+- OCR quality depends on the scan; low-confidence pages are flagged, not silently trusted.
+- Single owner only: no multi-user accounts, sharing or registration.
+- Findings explain what the documents do and do not support; they are not legal advice or a guarantee of recovery.
 
 ## Tests
 
 ```bash
 cd backend && python -m pytest -q
-cd frontend && npm run build && npm run lint
+cd frontend && npm test && npm run lint && npm run build
 ```
 
-146 backend tests. Highlights:
+261 backend tests and 11 frontend tests. Highlights:
 
 - `tests/synthetic_cases.py` — nine synthetic claims (simple, room rent + proportionate, co-pay, sub-limit and
   non-payable, missing clauses, poor OCR scan, exclusions, two-page bill with "/-" amounts and rounding, conflicting
