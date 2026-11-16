@@ -8,6 +8,11 @@ export interface Health {
   analysis: string
 }
 
+export interface OwnerSession {
+  enabled: boolean
+  authenticated: boolean
+}
+
 export type ProviderState = 'available'
 
 // Both providers run on the Clavion server; neither calls an external or AI service.
@@ -252,12 +257,18 @@ export interface CaseSummary {
   contestable_total: Money | null
 }
 
+// Empty by default: local Vite proxy or a same-origin reverse proxy handles /api.
+export function apiUrl(path: string, origin = import.meta.env?.VITE_API_ORIGIN ?? ''): string {
+  return origin.trim().replace(/\/+$/, '') + path
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, init).catch(() => {
+  const r = await fetch(apiUrl(path), { ...init, credentials: 'include' }).catch(() => {
     throw new Error('Cannot reach the Clavion server. Check your connection and that the backend is running.')
   })
   if (r.status === 204) return undefined as T
   if (!r.ok) {
+    if (r.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('clavion-auth-required'))
     let msg = r.status >= 500 ? `The Clavion server could not complete the request (${r.status}).` : `Request failed (${r.status}).`
     try {
       const body = await r.json()
@@ -286,6 +297,9 @@ const json = (method: string, body?: unknown): RequestInit => ({
 })
 
 export const api = {
+  authStatus: () => request<OwnerSession>('/api/auth/session'),
+  login: (password: string) => request<{ authenticated: boolean }>('/api/auth/login', json('POST', { password })),
+  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' }),
   health: () => request<Health>('/api/health'),
   providers: () => request<Provider[]>('/api/providers'),
   cases: () => request<CaseSummary[]>('/api/cases'),
@@ -304,9 +318,9 @@ export const api = {
   deleteCase: (id: string) => request<void>(`/api/cases/${id}`, { method: 'DELETE' }),
   saveAppeal: (id: string, body: { text: string } | { statements: AppealStatement[] }) =>
     request<CaseDetail>(`/api/cases/${id}/appeal`, json('PUT', body)),
-  exportUrl: (id: string, kind: 'report' | 'appeal') => `/api/cases/${id}/export.pdf?kind=${kind}`,
+  exportUrl: (id: string, kind: 'report' | 'appeal') => apiUrl(`/api/cases/${id}/export.pdf?kind=${kind}`),
   demoDocumentUrl: (docType: DocType, format: 'pdf' | 'png' = 'pdf') =>
-    `/api/demo/documents/${docType}?format=${format}`,
+    apiUrl(`/api/demo/documents/${docType}?format=${format}`),
 }
 
 export const DOC_LABELS: Record<DocType, string> = {
@@ -329,7 +343,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-export { rupees } from './money'
+export { rupees } from './money.ts'
 
 /** Letter text from the included statements; mirrors services/report.compose on the server. */
 export function composeAppeal(statements: AppealStatement[]): string {

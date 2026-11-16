@@ -102,6 +102,14 @@ npm run dev                 # http://localhost:5173
 Try it without documents: **Try the synthetic demo** on the dashboard, or download the synthetic PDFs/images from
 the New audit page and upload them. Everything derived from synthetic documents is labelled DEMO.
 
+## Online use
+
+GitHub Pages hosts only the frontend. It cannot run FastAPI, OCR or SQLite; the
+current Pages deployment does not provide a working audit service.
+See [hosting options and configuration](docs/HOSTING.md) for the next steps.
+Single-owner authentication is available; follow [secure configuration and recovery](docs/SECURITY.md)
+before exposing the API. Authentication is disabled by default for local use.
+
 ## Tests
 
 ```bash
@@ -130,4 +138,5 @@ cd frontend && npm run build && npm run lint
 - Deleting a case removes its text, fields, audit and appeal.
 - The audit trail records events (uploads, corrections, audits, appeal saves) but never document text or amounts.
 - Uploads: 15 MB, 60 PDF pages, 40 megapixels per image; signature checked; client paths stripped from file names.
-- There is no authentication: run Clavion on your own machine, not as a shared server.
+- Optional single-owner password authentication protects the API and downloads with expiring, revocable
+  sessions. With authentication disabled, bind only to loopback. There is no public registration or multi-user mode.

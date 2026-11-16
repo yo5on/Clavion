@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, String, create_engine, event, text
+from sqlalchemy import JSON, DateTime, String, Integer, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -32,6 +32,22 @@ class Case(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class OwnerSession(Base):
+    __tablename__ = "owner_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    credential_key: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[int] = mapped_column(Integer)
+
+
+class LoginThrottle(Base):
+    __tablename__ = "login_throttle"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    window_start: Mapped[int] = mapped_column(Integer)
+    attempts: Mapped[int] = mapped_column(Integer)
 
 
 def init_db() -> None:
